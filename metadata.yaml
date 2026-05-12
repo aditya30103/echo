@@ -1,0 +1,333 @@
+title: "Echo"
+description: "Identity reconstructed from the reverberations of attention."
+
+databases:
+  echo:
+    title: "Echo"
+    description: "Your YouTube watch history. Start anywhere."
+
+    queries:
+
+      # ── TIMELINE ─────────────────────────────────────────────────────────
+
+      monthly_timeline:
+        title: "Monthly Timeline"
+        description: >
+          The full arc of your attention — one row per month from 2016 to 2026.
+          Look for the gaps, the surges, and the years that vanish.
+        sql: |
+          SELECT
+            substr(datetime(watched_at, '+330 minutes'), 1, 7)        AS month,
+            COUNT(*)                                                    AS watches,
+            COUNT(DISTINCT channel_name)                               AS unique_channels
+          FROM watches
+          GROUP BY month
+          ORDER BY month
+
+      heavy_days:
+        title: "Heaviest Days"
+        description: >
+          The 50 days you watched the most. Peaks of curiosity, procrastination,
+          or something harder to name. Look at what those days have in common.
+        sql: |
+          SELECT
+            date(datetime(watched_at, '+330 minutes'))                 AS date_ist,
+            COUNT(*)                                                    AS watches,
+            COUNT(DISTINCT channel_name)                               AS channels,
+            MIN(substr(datetime(watched_at, '+330 minutes'), 12, 5))  AS first_watch_ist,
+            MAX(substr(datetime(watched_at, '+330 minutes'), 12, 5))  AS last_watch_ist,
+            ROUND(
+              (julianday(MAX(watched_at)) - julianday(MIN(watched_at))) * 24, 1
+            )                                                           AS span_hours
+          FROM watches
+          GROUP BY date_ist
+          ORDER BY watches DESC
+          LIMIT 50
+
+      on_this_date:
+        title: "On This Date"
+        description: >
+          Everything you watched on a specific day, in order.
+          Try a date that matters to you. Format: YYYY-MM-DD
+        sql: |
+          SELECT
+            substr(datetime(watched_at, '+330 minutes'), 12, 8)       AS time_ist,
+            title,
+            channel_name
+          FROM watches
+          WHERE date(datetime(watched_at, '+330 minutes')) = :date
+          ORDER BY watched_at
+
+      year_at_a_glance:
+        title: "Year at a Glance"
+        description: >
+          All active days in a given year, sorted by intensity.
+          Try a year that matters to you.
+          Format: YYYY
+        sql: |
+          SELECT
+            date(datetime(watched_at, '+330 minutes'))                 AS date_ist,
+            COUNT(*)                                                    AS watches,
+            COUNT(DISTINCT channel_name)                               AS channels,
+            MIN(substr(datetime(watched_at, '+330 minutes'), 12, 5))  AS first_ist,
+            MAX(substr(datetime(watched_at, '+330 minutes'), 12, 5))  AS last_ist
+          FROM watches
+          WHERE substr(datetime(watched_at, '+330 minutes'), 1, 4) = :year
+          GROUP BY date_ist
+          ORDER BY watches DESC
+
+      # ── SESSIONS ─────────────────────────────────────────────────────────
+
+      night_archaeology:
+        title: "Night Archaeology"
+        description: >
+          Everything you watched between 22:00 and 04:00 IST, most recent first.
+          The late-night signal is one of Echo's strongest behavioral markers.
+          What were you looking for in the dark?
+        sql: |
+          SELECT
+            date(datetime(watched_at, '+330 minutes'))                 AS night_date,
+            substr(datetime(watched_at, '+330 minutes'), 12, 5)       AS time_ist,
+            title,
+            channel_name
+          FROM watches
+          WHERE
+            CAST(substr(datetime(watched_at, '+330 minutes'), 12, 2) AS INTEGER) >= 22
+            OR
+            CAST(substr(datetime(watched_at, '+330 minutes'), 12, 2) AS INTEGER) < 4
+          ORDER BY watched_at DESC
+
+      binge_sessions:
+        title: "Binge Sessions"
+        description: >
+          Runs of 4 or more consecutive videos watched within 90-minute windows.
+          Your longest sessions, ranked. These are the hours that disappear.
+        sql: |
+          WITH gaps AS (
+            SELECT
+              id, title, channel_name, watched_at,
+              datetime(watched_at, '+330 minutes')   AS ist,
+              LAG(watched_at) OVER (ORDER BY watched_at) AS prev_at
+            FROM watches
+          ),
+          marked AS (
+            SELECT *,
+              CASE
+                WHEN prev_at IS NULL
+                  OR (julianday(watched_at) - julianday(prev_at)) * 1440 > 90
+                THEN 1 ELSE 0
+              END AS new_session
+            FROM gaps
+          ),
+          sessioned AS (
+            SELECT *, SUM(new_session) OVER (ORDER BY watched_at) AS session_id
+            FROM marked
+          )
+          SELECT
+            session_id,
+            COUNT(*)                                                     AS videos,
+            date(MIN(ist))                                               AS date,
+            substr(MIN(ist), 12, 5)                                      AS started_ist,
+            substr(MAX(ist), 12, 5)                                      AS ended_ist,
+            ROUND((julianday(MAX(watched_at)) - julianday(MIN(watched_at))) * 24 * 60)
+                                                                         AS duration_min,
+            COUNT(DISTINCT channel_name)                                 AS channels
+          FROM sessioned
+          GROUP BY session_id
+          HAVING COUNT(*) >= 4
+          ORDER BY videos DESC
+          LIMIT 50
+
+      # ── CHANNELS ─────────────────────────────────────────────────────────
+
+      forgotten_channels:
+        title: "Forgotten Channels"
+        description: >
+          Channels you watched 3 or more times that haven't appeared since 2024.
+          Things you used to reach for that you've stopped reaching for.
+          Sorted by how much you watched them before they disappeared.
+        sql: |
+          SELECT
+            channel_name,
+            COUNT(*)                                                      AS total_watches,
+            MIN(date(datetime(watched_at, '+330 minutes')))               AS first_watch,
+            MAX(date(datetime(watched_at, '+330 minutes')))               AS last_watch,
+            CAST(
+              julianday(date('now')) -
+              julianday(MAX(date(datetime(watched_at, '+330 minutes'))))
+            AS INTEGER)                                                   AS days_gone
+          FROM watches
+          WHERE channel_name IS NOT NULL
+          GROUP BY channel_name
+          HAVING last_watch < '2024-01-01'
+            AND total_watches >= 3
+          ORDER BY total_watches DESC
+
+      channel_timeline:
+        title: "Channel Timeline"
+        description: >
+          All the months you watched a specific channel — when it entered your life,
+          how long it stayed, whether it came back.
+          Partial match, case-insensitive. Try a channel name from your top channels.
+        sql: |
+          SELECT
+            substr(datetime(watched_at, '+330 minutes'), 1, 7)          AS month,
+            COUNT(*)                                                      AS watches
+          FROM watches
+          WHERE lower(channel_name) LIKE '%' || lower(:channel) || '%'
+          GROUP BY month
+          ORDER BY month
+
+      top_channels_by_year:
+        title: "Top Channels by Year"
+        description: >
+          Your top 10 channels each year. Watch the cast of characters shift.
+          The channels that appear in 2021 and vanish in 2022 are the story.
+        sql: |
+          WITH ranked AS (
+            SELECT
+              substr(datetime(watched_at, '+330 minutes'), 1, 4)   AS year,
+              channel_name,
+              COUNT(*)                                              AS watches,
+              ROW_NUMBER() OVER (
+                PARTITION BY substr(datetime(watched_at, '+330 minutes'), 1, 4)
+                ORDER BY COUNT(*) DESC
+              ) AS rnk
+            FROM watches
+            WHERE channel_name IS NOT NULL
+            GROUP BY year, channel_name
+          )
+          SELECT year, rnk AS rank, channel_name, watches
+          FROM ranked
+          WHERE rnk <= 10
+          ORDER BY year, rnk
+
+      recurring_channels:
+        title: "Recurring Channels"
+        description: >
+          Channels you returned to across 2 or more different years.
+          These are your constants — the things you keep coming back to.
+        sql: |
+          SELECT
+            channel_name,
+            COUNT(DISTINCT substr(datetime(watched_at, '+330 minutes'), 1, 4))  AS years_active,
+            COUNT(*)                                                              AS total_watches,
+            MIN(date(datetime(watched_at, '+330 minutes')))                      AS first_watch,
+            MAX(date(datetime(watched_at, '+330 minutes')))                      AS last_watch
+          FROM watches
+          WHERE channel_name IS NOT NULL
+          GROUP BY channel_name
+          HAVING years_active >= 2
+          ORDER BY years_active DESC, total_watches DESC
+
+      # ── INTENT ───────────────────────────────────────────────────────────
+
+      yt_searches:
+        title: "YouTube Search History"
+        description: >
+          Everything you searched for on YouTube, most recent first.
+          These are the things you went looking for — not what you were fed.
+        sql: |
+          SELECT
+            date(datetime(searched_at, '+330 minutes'))                  AS date,
+            substr(datetime(searched_at, '+330 minutes'), 12, 5)         AS time_ist,
+            query
+          FROM yt_searches
+          ORDER BY searched_at DESC
+
+      search_to_watch:
+        title: "Search → Watch"
+        description: >
+          YouTube searches followed within 30 minutes by a watch event.
+          The gap between intent and outcome — what you looked for vs. what you stayed for.
+        sql: |
+          SELECT
+            date(datetime(s.searched_at, '+330 minutes'))                AS date,
+            s.query                                                       AS searched_for,
+            substr(datetime(s.searched_at, '+330 minutes'), 12, 5)       AS search_time,
+            w.title                                                       AS then_watched,
+            w.channel_name                                                AS channel,
+            substr(datetime(w.watched_at, '+330 minutes'), 12, 5)        AS watch_time,
+            ROUND((julianday(w.watched_at) - julianday(s.searched_at)) * 1440)
+                                                                          AS gap_min
+          FROM yt_searches s
+          JOIN watches w
+            ON w.watched_at > s.searched_at
+            AND (julianday(w.watched_at) - julianday(s.searched_at)) * 1440 <= 30
+          ORDER BY s.searched_at DESC
+          LIMIT 300
+
+      google_searches_history:
+        title: "Google Search History"
+        description: >
+          What you searched for on Google, most recent first.
+          Cross-reference with your YouTube phases to see what was on your mind.
+        sql: |
+          SELECT
+            date(datetime(searched_at, '+330 minutes'))                  AS date,
+            substr(datetime(searched_at, '+330 minutes'), 12, 5)         AS time_ist,
+            query
+          FROM google_searches
+          ORDER BY searched_at DESC
+
+      # ── FEED ─────────────────────────────────────────────────────────────
+
+      discover_feed:
+        title: "Discover Feed Snapshots"
+        description: >
+          What Google was showing you in your Discover feed, most recent first.
+          Topics with (clicked) are ones you tapped. This is the algorithm's model of you.
+        sql: |
+          SELECT
+            date(datetime(snapshot_at, '+330 minutes'))                  AS date,
+            substr(datetime(snapshot_at, '+330 minutes'), 12, 5)         AS time_ist,
+            all_topics,
+            viewed_topics
+          FROM discover_feed
+          ORDER BY snapshot_at DESC
+          LIMIT 200
+
+      # ── ANCHORS ──────────────────────────────────────────────────────────
+
+      calendar_phases:
+        title: "Calendar Phases"
+        description: >
+          Events from all your calendars — all your calendars.
+          Use to anchor what was happening in your life during behavioral shifts.
+        sql: |
+          SELECT
+            calendar_name,
+            substr(start_date, 1, 7)                                     AS month,
+            COUNT(*)                                                      AS events
+          FROM calendar_events
+          GROUP BY calendar_name, month
+          ORDER BY month, calendar_name
+
+      mck_calendar:
+        title: "Single Calendar View"
+        description: "All events from a single calendar."
+        sql: |
+          SELECT
+            summary,
+            start_date,
+            end_date
+          FROM calendar_events
+          WHERE calendar_name = 'McK'
+          ORDER BY start_date
+
+      transactions_rhythm:
+        title: "Transaction Rhythm"
+        description: >
+          Google Pay spending patterns by month.
+          Where your money went correlates with where your attention went.
+        sql: |
+          SELECT
+            substr(datetime(transacted_at, '+330 minutes'), 1, 7)        AS month,
+            COUNT(*)                                                       AS transactions,
+            ROUND(SUM(CASE WHEN direction = 'sent' THEN amount_inr ELSE 0 END), 0)
+                                                                           AS sent_inr,
+            ROUND(SUM(CASE WHEN direction = 'received' THEN amount_inr ELSE 0 END), 0)
+                                                                           AS received_inr
+          FROM transactions
+          GROUP BY month
+          ORDER BY month

@@ -1,0 +1,8 @@
+sqlite-utils>=3.35
+python-dotenv>=1.0.0
+datasette>=0.64
+ruptures>=1.1.9
+lancedb>=0.6.0
+openai>=1.30.0
+google-api-python-client>=2.130.0
+icalendar>=5.0.0
