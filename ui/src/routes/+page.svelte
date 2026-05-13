@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import TimelineCard from '$lib/TimelineCard.svelte';
+	import SearchResult from '$lib/SearchResult.svelte';
 
 	type WatchItem = {
 		watch_id: number;
@@ -29,7 +30,7 @@
 	};
 
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'night' | 'month' | 'chapters';
+	type View = 'night' | 'month' | 'chapters' | 'search';
 	let selectedView: View = $state('night');
 
 	// ── night view ───────────────────────────────────────────────────────────────
@@ -107,6 +108,49 @@
 		}
 	}
 
+	// ── search view ──────────────────────────────────────────────────────────────
+	type SearchRow = Record<string, unknown> & { similarity: number };
+	type SearchResults = Record<string, SearchRow[]>;
+
+	let searchQuery: string = $state('');
+	let searchTable: string = $state('all');
+	let searchTop: number = $state(10);
+	let searchResults: SearchResults = $state({});
+	let searchLoading: boolean = $state(false);
+	let searchError: string = $state('');
+	let searchDone: boolean = $state(false);
+
+	async function runSearch() {
+		if (!searchQuery.trim()) return;
+		searchLoading = true;
+		searchError = '';
+		searchDone = false;
+		searchResults = {};
+		try {
+			const tableParam = searchTable === 'all' ? '' : `&table=${searchTable}`;
+			const url = `/api/search?q=${encodeURIComponent(searchQuery)}&top=${searchTop}${tableParam}`;
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			const data = await res.json();
+			searchResults = data.results;
+			searchDone = true;
+		} catch (e) {
+			searchError = String(e);
+		} finally {
+			searchLoading = false;
+		}
+	}
+
+	function onSearchKey(e: KeyboardEvent) {
+		if (e.key === 'Enter') runSearch();
+	}
+
+	const TABLE_LABELS: Record<string, string> = {
+		reflections: 'Chapter arcs',
+		videos: 'Videos',
+		searches: 'YouTube searches',
+	};
+
 	// ── lifecycle ─────────────────────────────────────────────────────────────────
 	onMount(() => loadNight());
 
@@ -136,6 +180,9 @@
 			</button>
 			<button class:active={selectedView === 'chapters'} onclick={() => switchView('chapters')}>
 				Chapters
+			</button>
+			<button class:active={selectedView === 'search'} onclick={() => switchView('search')}>
+				Search
 			</button>
 		</nav>
 	</header>
@@ -198,6 +245,59 @@
 						{monthLoading ? 'Loading…' : `Load more (${monthTotal - monthItems.length} remaining)`}
 					</button>
 				{/if}
+			{/if}
+		</section>
+	{/if}
+
+	<!-- ── Search view ───────────────────────────────────────────────── -->
+	{#if selectedView === 'search'}
+		<section>
+			<div class="view-header">
+				<h2>Semantic Search</h2>
+				<span class="dim" style="font-size:0.75rem">across chapter arcs, videos, and YouTube searches</span>
+			</div>
+
+			<div class="search-bar">
+				<input
+					class="search-input"
+					type="text"
+					placeholder='e.g. "stoicism late at night" or "week before JEE Advanced"'
+					bind:value={searchQuery}
+					onkeydown={onSearchKey}
+				/>
+				<select class="search-select" bind:value={searchTable}>
+					<option value="all">All tables</option>
+					<option value="reflections">Chapter arcs</option>
+					<option value="videos">Videos</option>
+					<option value="searches">Searches</option>
+				</select>
+				<select class="search-select" bind:value={searchTop}>
+					<option value={5}>Top 5</option>
+					<option value={10}>Top 10</option>
+					<option value={20}>Top 20</option>
+				</select>
+				<button class="search-btn" onclick={runSearch} disabled={searchLoading || !searchQuery.trim()}>
+					{searchLoading ? '…' : 'Search'}
+				</button>
+			</div>
+
+			{#if searchLoading}
+				<p class="status">Embedding query and searching…</p>
+			{:else if searchError}
+				<p class="error">{searchError}</p>
+			{:else if searchDone}
+				{#each Object.entries(searchResults) as [tbl, rows]}
+					{#if rows.length > 0}
+						<div class="result-section">
+							<p class="result-label">{TABLE_LABELS[tbl] ?? tbl}</p>
+							<div class="card-list">
+								{#each rows as row}
+									<SearchResult result={row as any} table={tbl as any} />
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{/each}
 			{/if}
 		</section>
 	{/if}
@@ -328,6 +428,64 @@
 	}
 	.load-more:hover:not(:disabled) { border-color: #374151; color: #d1d5db; }
 	.load-more:disabled { opacity: 0.5; cursor: default; }
+
+	.search-bar {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
+		flex-wrap: wrap;
+	}
+
+	.search-input {
+		flex: 1;
+		min-width: 200px;
+		background: #111827;
+		border: 1px solid #374151;
+		color: #f3f4f6;
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+	}
+	.search-input:focus {
+		outline: none;
+		border-color: #4f46e5;
+	}
+	.search-input::placeholder { color: #4b5563; }
+
+	.search-select {
+		background: #111827;
+		border: 1px solid #1f2937;
+		color: #9ca3af;
+		padding: 0.5rem 0.5rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.search-btn {
+		background: #4f46e5;
+		border: none;
+		color: #fff;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		font-weight: 600;
+		transition: background 0.15s;
+	}
+	.search-btn:hover:not(:disabled) { background: #4338ca; }
+	.search-btn:disabled { opacity: 0.5; cursor: default; }
+
+	.result-section { margin-bottom: 1.5rem; }
+
+	.result-label {
+		margin: 0 0 0.4rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #6b7280;
+	}
 
 	.chapter-grid {
 		display: grid;

@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import timeline, chapters
+from api.routers import timeline, chapters, search
 
 app = FastAPI(title="Echo API", version="0.1.0")
 
@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(timeline.router)
 app.include_router(chapters.router)
+app.include_router(search.router)
 
 
 @app.get("/api/health")
