@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import TimelineCard from '$lib/TimelineCard.svelte';
 	import SearchResult from '$lib/SearchResult.svelte';
+	import DiffView from '$lib/DiffView.svelte';
 
 	type WatchItem = {
 		watch_id: number;
@@ -30,7 +31,7 @@
 	};
 
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'night' | 'month' | 'chapters' | 'search';
+	type View = 'night' | 'month' | 'chapters' | 'search' | 'diff';
 	let selectedView: View = $state('night');
 
 	// ── night view ───────────────────────────────────────────────────────────────
@@ -151,6 +152,62 @@
 		searches: 'YouTube searches',
 	};
 
+	// ── diff view ─────────────────────────────────────────────────────────────────
+	type ChapterSummary = {
+		id: number; label: string; start_at: string; end_at: string;
+		night_ratio: number | null; modal_hour: number | null;
+		long_form_ratio: number | null; shorts_ratio: number | null;
+		channel_density_score: number | null; median_duration_seconds: number | null;
+		top_categories: Record<string, number>;
+	};
+	type DiffResult = {
+		chapter_a: number; chapter_b: number;
+		chapter_a_data: ChapterSummary & { reflection?: string | null };
+		chapter_b_data: ChapterSummary & { reflection?: string | null };
+		narrative: string; model: string; cached: boolean; created_at: string;
+	};
+
+	let diffChapters: ChapterSummary[] = $state([]);
+	let diffChaptersLoaded: boolean = $state(false);
+	let diffSelA: number = $state(2);
+	let diffSelB: number = $state(5);
+	let diffLoading: boolean = $state(false);
+	let diffError: string = $state('');
+	let diffResult: DiffResult | null = $state(null);
+
+	async function loadDiffChapters() {
+		if (diffChaptersLoaded) return;
+		const res = await fetch('/api/diff/chapters');
+		if (res.ok) {
+			const d = await res.json();
+			diffChapters = d.chapters;
+			diffChaptersLoaded = true;
+		}
+	}
+
+	async function runDiff(force = false) {
+		if (diffSelA === diffSelB) return;
+		diffLoading = true;
+		diffError = '';
+		diffResult = null;
+		try {
+			const res = await fetch('/api/diff', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ chapter_a: diffSelA, chapter_b: diffSelB, force }),
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.detail ?? `${res.status}`);
+			}
+			diffResult = await res.json();
+		} catch (e) {
+			diffError = String(e);
+		} finally {
+			diffLoading = false;
+		}
+	}
+
 	// ── lifecycle ─────────────────────────────────────────────────────────────────
 	onMount(() => loadNight());
 
@@ -159,6 +216,7 @@
 		if (v === 'night' && !nightLoaded) loadNight();
 		if (v === 'month') loadMonth(true);
 		if (v === 'chapters' && !chaptersLoaded) loadChapters();
+		if (v === 'diff') loadDiffChapters();
 	}
 
 	function fmtDate(d: string) { return d.slice(0, 10); }
@@ -183,6 +241,9 @@
 			</button>
 			<button class:active={selectedView === 'search'} onclick={() => switchView('search')}>
 				Search
+			</button>
+			<button class:active={selectedView === 'diff'} onclick={() => switchView('diff')}>
+				Psyche Diff
 			</button>
 		</nav>
 	</header>
@@ -298,6 +359,58 @@
 						</div>
 					{/if}
 				{/each}
+			{/if}
+		</section>
+	{/if}
+
+	<!-- ── Diff view ─────────────────────────────────────────────────── -->
+	{#if selectedView === 'diff'}
+		<section>
+			<div class="view-header">
+				<h2>Psyche Diff</h2>
+				<span class="dim" style="font-size:0.75rem">Who were you then vs who were you later?</span>
+			</div>
+
+			<div class="diff-controls">
+				<select class="diff-select" bind:value={diffSelA} onchange={() => diffResult = null}>
+					{#each diffChapters as ch}
+						<option value={ch.id}>Ch {ch.id} — {ch.label} ({ch.start_at.slice(0,7)})</option>
+					{/each}
+				</select>
+				<span class="vs">vs</span>
+				<select class="diff-select" bind:value={diffSelB} onchange={() => diffResult = null}>
+					{#each diffChapters as ch}
+						<option value={ch.id}>Ch {ch.id} — {ch.label} ({ch.start_at.slice(0,7)})</option>
+					{/each}
+				</select>
+				<button
+					class="diff-btn"
+					onclick={() => runDiff(false)}
+					disabled={diffLoading || diffSelA === diffSelB}
+				>
+					{diffLoading ? 'Thinking…' : 'Compare'}
+				</button>
+				{#if diffResult?.cached}
+					<button class="diff-btn-ghost" onclick={() => runDiff(true)} disabled={diffLoading}>
+						Regenerate
+					</button>
+				{/if}
+			</div>
+
+			{#if diffSelA === diffSelB}
+				<p class="status">Choose two different chapters.</p>
+			{:else if diffLoading}
+				<p class="status">Calling GPT-4o… this takes ~5 seconds.</p>
+			{:else if diffError}
+				<p class="error">{diffError}</p>
+			{:else if diffResult}
+				<DiffView
+					a={diffResult.chapter_a_data}
+					b={diffResult.chapter_b_data}
+					narrative={diffResult.narrative}
+					model={diffResult.model}
+					cached={diffResult.cached}
+				/>
 			{/if}
 		</section>
 	{/if}
@@ -475,6 +588,61 @@
 	}
 	.search-btn:hover:not(:disabled) { background: #4338ca; }
 	.search-btn:disabled { opacity: 0.5; cursor: default; }
+
+	.diff-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
+		flex-wrap: wrap;
+	}
+
+	.diff-select {
+		flex: 1;
+		min-width: 180px;
+		background: #111827;
+		border: 1px solid #374151;
+		color: #d1d5db;
+		padding: 0.45rem 0.6rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.vs {
+		font-size: 0.75rem;
+		color: #4b5563;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.diff-btn {
+		background: #4f46e5;
+		border: none;
+		color: #fff;
+		padding: 0.45rem 1rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		font-weight: 600;
+		white-space: nowrap;
+		transition: background 0.15s;
+	}
+	.diff-btn:hover:not(:disabled) { background: #4338ca; }
+	.diff-btn:disabled { opacity: 0.5; cursor: default; }
+
+	.diff-btn-ghost {
+		background: transparent;
+		border: 1px solid #374151;
+		color: #6b7280;
+		padding: 0.45rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.diff-btn-ghost:hover:not(:disabled) { border-color: #4b5563; color: #9ca3af; }
+	.diff-btn-ghost:disabled { opacity: 0.4; cursor: default; }
 
 	.result-section { margin-bottom: 1.5rem; }
 
