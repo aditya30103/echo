@@ -173,7 +173,7 @@ def load_searches(db: sqlite_utils.Database) -> list[dict]:
 
 def write_table(ldb, name: str, records: list[dict], vectors: list[list[float]]):
     """Drop-and-recreate a lancedb table with embedded records."""
-    if name in ldb.list_tables():
+    if name in ldb.list_tables().tables:
         ldb.drop_table(name)
         print(f"  Dropped existing '{name}' table.")
 
@@ -241,7 +241,7 @@ def main():
         print()
 
     print(f"Done. lancedb written to: {LANCEDB_PATH}")
-    print(f"Tables: {', '.join(ldb.list_tables())}")
+    print(f"Tables: {', '.join(ldb.list_tables().tables)}")
 
 
 if __name__ == "__main__":
