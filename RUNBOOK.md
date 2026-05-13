@@ -104,7 +104,45 @@ chapter reflection misinterprets what the data represents.
 
 ---
 
-## Browsing the data
+## Echo UI (v2 — FastAPI + SvelteKit)
+
+Run both servers concurrently (two terminals):
+
+```bash
+# Terminal 1 — FastAPI backend (port 8000)
+python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+
+# Terminal 2 — SvelteKit dev server (port 5173)
+cd ui && npm run dev
+```
+
+Open http://localhost:5173
+
+The Vite dev server proxies all `/api` requests to the FastAPI backend.
+No CORS configuration needed — both run on localhost.
+
+### Smoke checks
+
+```bash
+# night endpoint — expect 1097 rows
+curl http://127.0.0.1:8000/api/timeline/night | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'rows')"
+
+# chapters — expect 16 chapters
+curl http://127.0.0.1:8000/api/chapters | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'chapters')"
+```
+
+### API endpoints (Sprint 1)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Liveness check |
+| `/api/timeline/night` | GET | All 11 PM – 4 AM IST watches (1,097 rows) |
+| `/api/timeline?month=YYYY-MM&limit=200&offset=0` | GET | Watches for a given month, paginated |
+| `/api/chapters` | GET | All 16 chapters with fingerprints and reflections |
+
+---
+
+## Browsing the data (Datasette — legacy)
 
 ```bash
 run.bat           # launches Datasette at http://127.0.0.1:8001
