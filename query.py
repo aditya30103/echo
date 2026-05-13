@@ -14,54 +14,16 @@ Usage:
 """
 
 import argparse
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import lancedb
 
+from embed_common import load_env, get_embed_client, ALL_TABLES
+
 BASE         = Path(__file__).parent
-ENV_PATH     = BASE / ".env"
 LANCEDB_PATH = BASE / "lancedb"
-
-OPENAI_EMBED_MODEL     = "text-embedding-3-small"
-OPENROUTER_EMBED_MODEL = "openai/text-embedding-3-small"
-
-ALL_TABLES = ["reflections", "videos", "searches"]
-
-
-# ── Env / API ─────────────────────────────────────────────────────────────────
-
-def load_env():
-    if ENV_PATH.exists():
-        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
-
-
-def get_embed_client():
-    try:
-        import openai
-    except ImportError:
-        print("ERROR: openai package not installed. Run: pip install openai")
-        sys.exit(1)
-
-    key = os.environ.get("OPENAI_API_KEY", "")
-    if key:
-        return openai.OpenAI(api_key=key), OPENAI_EMBED_MODEL
-
-    or_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if or_key:
-        return openai.OpenAI(
-            api_key=or_key,
-            base_url="https://openrouter.ai/api/v1",
-        ), OPENROUTER_EMBED_MODEL
-
-    print("ERROR: No API key found. Set OPENAI_API_KEY or OPENROUTER_API_KEY in .env")
-    sys.exit(1)
 
 
 def embed_query(client, model: str, text: str) -> list[float]:
