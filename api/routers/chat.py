@@ -47,15 +47,48 @@ def _fmt_reflections(rows: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+def _enrich_videos(rows: list[dict], db: sqlite_utils.Database) -> list[dict]:
+    """Add first_seen_ist, last_seen_ist, chapters_seen to each video row."""
+    for r in rows:
+        vid = r.get("video_id")
+        if not vid:
+            continue
+        row = db.execute(f"""
+            SELECT
+                MIN(datetime(w.watched_at, '{IST_OFFSET}')) AS first_seen,
+                MAX(datetime(w.watched_at, '{IST_OFFSET}')) AS last_seen,
+                GROUP_CONCAT(DISTINCT c.label)              AS chapters
+            FROM watches w
+            LEFT JOIN chapters c
+                   ON datetime(w.watched_at, '{IST_OFFSET}') BETWEEN c.start_at AND c.end_at
+            WHERE w.video_id = ?
+        """, [vid]).fetchone()
+        if row:
+            r["first_seen_ist"] = (row[0] or "")[:10]
+            r["last_seen_ist"]  = (row[1] or "")[:10]
+            r["chapters_seen"]  = row[2] or ""
+    return rows
+
+
 def _fmt_videos(rows: list[dict]) -> str:
     lines = []
     for r in rows:
-        sim = f"{r['similarity']:.0%}"
+        sim     = f"{r['similarity']:.0%}"
         title   = r.get('title') or r.get('text') or ''
         channel = r.get('channel') or ''
         count   = r.get('watch_count', 0)
-        ch_str  = f" · {channel}" if channel else ""
-        lines.append(f"[Video | sim {sim}] {title}{ch_str} (watched {count}×)")
+        first   = r.get('first_seen_ist', '')
+        last    = r.get('last_seen_ist', '')
+        chapters = r.get('chapters_seen', '')
+
+        ch_str   = f" · {channel}" if channel else ""
+        date_str = f" · first: {first}" if first else ""
+        span_str = f"–{last}" if last and last != first else ""
+        chap_str = f" · in: {chapters}" if chapters else ""
+        lines.append(
+            f"[Video | sim {sim}] {title}{ch_str} "
+            f"(watched {count}×{date_str}{span_str}{chap_str})"
+        )
     return "\n".join(lines)
 
 
@@ -155,6 +188,9 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
         watches = _fetch_watches(db, req.time_range, req.top_watches)
 
     # 4. Build context
+    if videos:
+        videos = _enrich_videos(videos, db)
+
     context_parts: list[tuple[str, str]] = []
     if reflections:
         context_parts.append(("Chapter arcs (semantic)", _fmt_reflections(reflections)))
