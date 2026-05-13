@@ -13,7 +13,7 @@ pip install sqlite-utils ruptures numpy matplotlib openai
 
 API keys go in `.env` (copy `.env.example` and fill in values):
 - `YOUTUBE_API_KEY` — required for enrich.py
-- `OPENAI_API_KEY` — required for reflect.py
+- `OPENAI_API_KEY` or `OPENROUTER_API_KEY` — required for reflect.py (OpenRouter used as fallback)
 
 ---
 
@@ -90,9 +90,17 @@ python reflect.py                              # reflect on all 16 chapters
 python reflect.py --autobiography              # full arc synthesis
 ```
 
-Requires `OPENAI_API_KEY` in `.env` (except `--dry-run`).
+Requires `OPENAI_API_KEY` or `OPENROUTER_API_KEY` in `.env` (except `--dry-run`).
 Results append to the `reflections` table — re-running adds new rows without deleting old ones.
 Preview with `--dry-run` before running live to check prompt quality.
+
+#### Life context annotations
+
+`annotations.yaml` holds date-range-tagged clarifications about real-life events
+(e.g. "these [McK] calendar entries are prior institution POR events, not McKinsey work").
+reflect.py reads this file at prompt-build time and injects matching entries into
+the `LIFE CONTEXT` section of each chapter prompt. Add entries here whenever a
+chapter reflection misinterprets what the data represents.
 
 ---
 
@@ -137,7 +145,7 @@ YouTube API quota resets at midnight Pacific. Re-run the next day — it skips a
 `ingest.py`, `detect.py`, and `signals.py` are all idempotent — just re-run from the failing step.
 
 **`reflect.py` — no reflections appearing**
-Check that `OPENAI_API_KEY` is set in `.env` and the key has gpt-4o access. Run with `--dry-run` first to confirm prompts look right.
+Check that `OPENAI_API_KEY` or `OPENROUTER_API_KEY` is set in `.env`. If both are set, `OPENAI_API_KEY` takes priority. Run with `--dry-run` first to confirm prompts look right.
 
 ---
 

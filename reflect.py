@@ -29,9 +29,10 @@ from pathlib import Path
 
 import sqlite_utils
 
-BASE    = Path(__file__).parent
-DB_PATH = BASE / "echo.db"
-ENV_PATH = BASE / ".env"
+BASE             = Path(__file__).parent
+DB_PATH          = BASE / "echo.db"
+ENV_PATH         = BASE / ".env"
+ANNOTATIONS_PATH = BASE / "annotations.yaml"
 
 OPENAI_MODEL      = "gpt-4o"
 OPENROUTER_MODEL  = "openai/gpt-4o"  # OpenRouter uses provider-namespaced IDs
@@ -113,6 +114,27 @@ def call_gpt4o(client, model: str, system: str, user: str) -> str:
     return response.choices[0].message.content.strip()
 
 
+# ── Life context annotations ─────────────────────────────────────────────────
+
+def load_annotations(chapter_start: str, chapter_end: str) -> list[str]:
+    """Return annotation notes whose date range overlaps with [chapter_start, chapter_end]."""
+    if not ANNOTATIONS_PATH.exists():
+        return []
+    try:
+        import yaml
+    except ImportError:
+        return []  # pyyaml not installed — skip silently
+    data = yaml.safe_load(ANNOTATIONS_PATH.read_text(encoding="utf-8")) or {}
+    notes = []
+    for entry in data.get("annotations", []):
+        a_start = str(entry.get("start", ""))
+        a_end   = str(entry.get("end",   ""))
+        # Overlap: annotation starts before chapter ends AND ends after chapter starts
+        if a_start <= chapter_end and a_end >= chapter_start:
+            notes.append(str(entry.get("note", "")).strip())
+    return notes
+
+
 # ── Context assembly ──────────────────────────────────────────────────────────
 
 def assemble_chapter_context(db: sqlite_utils.Database, chapter_id: int, start_iso: str, end_iso: str) -> dict:
@@ -190,7 +212,7 @@ def assemble_chapter_context(db: sqlite_utils.Database, chapter_id: int, start_i
     }
 
 
-def build_chapter_prompt(chapter_num: int, ctx: dict) -> str:
+def build_chapter_prompt(chapter_num: int, ctx: dict, annotations: list[str] | None = None) -> str:
     fp  = ctx["fingerprint"]
     sig = ctx["signals"]
 
@@ -244,6 +266,14 @@ def build_chapter_prompt(chapter_num: int, ctx: dict) -> str:
         "",
         "What does this chapter reveal about this person's life, interests, and inner state?",
     ]
+
+    if annotations:
+        lines.insert(-1, "")
+        lines.insert(-1, "LIFE CONTEXT (ground truth supplied by the subject — treat as fact):")
+        for note in annotations:
+            for ln in note.splitlines():
+                lines.insert(-1, f"  {ln}")
+
     return "\n".join(lines)
 
 
@@ -376,8 +406,9 @@ def main():
 
     for num, (ch_id, start_at, end_at, label) in zip(nums, target):
         print(f"Chapter {num:>2}  {start_at} → {end_at}", flush=True)
-        ctx    = assemble_chapter_context(db, ch_id, start_at, end_at)
-        prompt = build_chapter_prompt(num, ctx)
+        ctx         = assemble_chapter_context(db, ch_id, start_at, end_at)
+        ann         = load_annotations(start_at, end_at)
+        prompt      = build_chapter_prompt(num, ctx, annotations=ann)
 
         if args.dry_run:
             print("── PROMPT ──────────────────────────────────────────────────────")
