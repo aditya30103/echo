@@ -15,8 +15,9 @@ Usage:
     python reflect.py --autobiography     # full arc synthesis across all chapters
     python reflect.py --dry-run --autobiography
 
-Requires:
-    OPENAI_API_KEY in .env (or environment)
+Requires (one of):
+    OPENAI_API_KEY    in .env — direct OpenAI
+    OPENROUTER_API_KEY in .env — OpenRouter (uses openai/gpt-4o, same quality)
 """
 
 import argparse
@@ -32,7 +33,8 @@ BASE    = Path(__file__).parent
 DB_PATH = BASE / "echo.db"
 ENV_PATH = BASE / ".env"
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL      = "gpt-4o"
+OPENROUTER_MODEL  = "openai/gpt-4o"  # OpenRouter uses provider-namespaced IDs
 
 CHAPTER_PROMPT_SYSTEM = """\
 You are a thoughtful observer helping someone understand a chapter of their life \
@@ -71,6 +73,7 @@ def load_env():
 
 
 def get_openai_client():
+    """Return (client, model_name). Prefers OPENAI_API_KEY; falls back to OPENROUTER_API_KEY."""
     try:
         import openai
     except ImportError:
@@ -78,21 +81,28 @@ def get_openai_client():
         sys.exit(1)
 
     key = os.environ.get("OPENAI_API_KEY", "")
-    if not key:
-        print(
-            "ERROR: OPENAI_API_KEY not set.\n"
-            "Add it to .env:\n"
-            "  OPENAI_API_KEY=sk-...\n"
-            "Or set the environment variable before running."
-        )
-        sys.exit(1)
+    if key:
+        return openai.OpenAI(api_key=key), OPENAI_MODEL
 
-    return openai.OpenAI(api_key=key)
+    or_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if or_key:
+        return openai.OpenAI(
+            api_key=or_key,
+            base_url="https://openrouter.ai/api/v1",
+        ), OPENROUTER_MODEL
+
+    print(
+        "ERROR: No API key found.\n"
+        "Add one of these to .env:\n"
+        "  OPENAI_API_KEY=sk-...        (direct OpenAI)\n"
+        "  OPENROUTER_API_KEY=sk-or-... (OpenRouter, uses openai/gpt-4o)"
+    )
+    sys.exit(1)
 
 
-def call_gpt4o(client, system: str, user: str) -> str:
+def call_gpt4o(client, model: str, system: str, user: str) -> str:
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": user},
@@ -290,13 +300,13 @@ def ensure_reflections_table(db: sqlite_utils.Database):
     db.conn.commit()
 
 
-def save_reflection(db: sqlite_utils.Database, chapter_id, kind: str, prompt: str, reflection: str):
+def save_reflection(db: sqlite_utils.Database, chapter_id, kind: str, prompt: str, reflection: str, model: str):
     db["reflections"].insert({
         "chapter_id":  chapter_id,
         "kind":        kind,
         "prompt_text": prompt,
         "reflection":  reflection,
-        "model":       OPENAI_MODEL,
+        "model":       model,
         "created_at":  datetime.now(timezone.utc).isoformat(),
     })
     db.conn.commit()
@@ -318,8 +328,9 @@ def main():
     ensure_reflections_table(db)
 
     client = None
+    model  = OPENAI_MODEL  # overwritten below when not dry-run
     if not args.dry_run:
-        client = get_openai_client()
+        client, model = get_openai_client()
 
     SEP = "=" * 70
 
@@ -333,9 +344,9 @@ def main():
             print()
             return
 
-        print(f"Calling {OPENAI_MODEL}...", flush=True)
-        reflection = call_gpt4o(client, AUTOBIOGRAPHY_SYSTEM, prompt)
-        save_reflection(db, chapter_id=None, kind="autobiography", prompt=prompt, reflection=reflection)
+        print(f"Calling {model}...", flush=True)
+        reflection = call_gpt4o(client, model, AUTOBIOGRAPHY_SYSTEM, prompt)
+        save_reflection(db, chapter_id=None, kind="autobiography", prompt=prompt, reflection=reflection, model=model)
         print("\n── REFLECTION ──────────────────────────────────────────────────")
         print(reflection)
         print(f"\nSaved to reflections table.")
@@ -374,9 +385,9 @@ def main():
             print()
             continue
 
-        print(f"  Calling {OPENAI_MODEL}...", end=" ", flush=True)
-        reflection = call_gpt4o(client, CHAPTER_PROMPT_SYSTEM, prompt)
-        save_reflection(db, chapter_id=ch_id, kind="chapter", prompt=prompt, reflection=reflection)
+        print(f"  Calling {model}...", end=" ", flush=True)
+        reflection = call_gpt4o(client, model, CHAPTER_PROMPT_SYSTEM, prompt)
+        save_reflection(db, chapter_id=ch_id, kind="chapter", prompt=prompt, reflection=reflection, model=model)
         print("done")
         print()
         print("── REFLECTION ──────────────────────────────────────────────────")
