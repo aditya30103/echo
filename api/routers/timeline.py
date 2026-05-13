@@ -1,12 +1,11 @@
 """Archaeology timeline queries — IST-aware."""
 
 from fastapi import APIRouter, Depends, Query
+from api.constants import IST_OFFSET
 from api.db import get_db
 import sqlite_utils
 
 router = APIRouter(prefix="/api/timeline", tags=["timeline"])
-
-IST_OFFSET = "+330 minutes"  # UTC+5:30; all behavioral hour calcs use this
 
 NIGHT_WHERE = """
     strftime('%H', datetime(w.watched_at, '{o}')) >= '23'

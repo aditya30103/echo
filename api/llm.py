@@ -72,6 +72,7 @@ def chat(
             max_tokens=max_tokens,
             system=system_msgs[0] if system_msgs else "",
             messages=user_msgs,
+            timeout=60,
         )
         return resp.content[0].text.strip(), f"claude-sonnet-4-6"
 
@@ -84,6 +85,7 @@ def chat(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            timeout=60,
         )
         return resp.choices[0].message.content.strip(), f"claude-sonnet-4-6 (OpenRouter)"
 
@@ -96,6 +98,7 @@ def chat(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            timeout=60,
         )
         return resp.choices[0].message.content.strip(), "gpt-4o"
 
@@ -108,6 +111,7 @@ def chat(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            timeout=60,
         )
         return resp.choices[0].message.content.strip(), "gpt-4o (OpenRouter)"
 

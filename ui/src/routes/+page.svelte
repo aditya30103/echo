@@ -177,11 +177,14 @@
 
 	async function loadDiffChapters() {
 		if (diffChaptersLoaded) return;
-		const res = await fetch('/api/diff/chapters');
-		if (res.ok) {
+		try {
+			const res = await fetch('/api/diff/chapters');
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
 			const d = await res.json();
 			diffChapters = d.chapters;
 			diffChaptersLoaded = true;
+		} catch (e) {
+			diffError = String(e);
 		}
 	}
 
@@ -291,6 +294,8 @@
 		if (v === 'chat') loadChatModels();
 	}
 
+	let maxMonth = $derived(new Date().toISOString().slice(0, 7));
+
 	function fmtDate(d: string) { return d.slice(0, 10); }
 	function pct(n: number | null) { return n != null ? `${(n * 100).toFixed(0)}%` : '—'; }
 </script>
@@ -357,7 +362,7 @@
 						type="month"
 						bind:value={selectedMonth}
 						min="2019-12"
-						max="2026-05"
+						max={maxMonth}
 						onchange={() => loadMonth(true)}
 					/>
 					{#if monthTotal > 0}

@@ -1,45 +1,24 @@
 """Psyche diff — behavioral delta narrative between two chapters."""
 
 import json
-import os
-import sys
-from pathlib import Path
+from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import sqlite_utils
 
 from api.db import get_db
-
-BASE = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(BASE))
+from api.llm import chat as llm_chat
 
 router = APIRouter(prefix="/api/diff", tags=["diff"])
-
-# GPT-4o via OpenRouter; falls back to gpt-4o-mini if 4o is unavailable
-CHAT_MODEL = "openai/gpt-4o"
 
 
 class DiffRequest(BaseModel):
     chapter_a: int
     chapter_b: int
-    force: bool = False  # bypass cache
-
-
-def _get_chat_client():
-    from embed_common import load_env
-    load_env()
-    import openai
-    key = os.environ.get("OPENAI_API_KEY", "")
-    if key:
-        return openai.OpenAI(api_key=key), "gpt-4o"
-    or_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if or_key:
-        return openai.OpenAI(
-            api_key=or_key,
-            base_url="https://openrouter.ai/api/v1",
-        ), CHAT_MODEL
-    raise RuntimeError("No API key found — set OPENAI_API_KEY or OPENROUTER_API_KEY in .env")
+    force: bool = False       # bypass cache
+    model: str = "auto"       # "auto" | "claude" | "gpt4o"
 
 
 def _fetch_chapter(db: sqlite_utils.Database, chapter_id: int) -> dict:
@@ -105,15 +84,17 @@ Write the psyche diff now. Start with the sharpest contrast you see between the 
 
 
 def _ensure_cache_table(db: sqlite_utils.Database):
+    # ignore=True → CREATE TABLE IF NOT EXISTS (safe for concurrent first requests)
     if "diffs" not in db.table_names():
         db["diffs"].create({
-            "id": str,        # "{min_id}-{max_id}"
+            "id": str,        # "{lo}-{hi}-{model}"
             "chapter_a": int,
             "chapter_b": int,
+            "model_key": str,
             "narrative": str,
             "model": str,
             "created_at": str,
-        }, pk="id")
+        }, pk="id", ignore=True)
 
 
 @router.post("")
@@ -124,7 +105,8 @@ def psyche_diff(req: DiffRequest, db: sqlite_utils.Database = Depends(get_db)):
     _ensure_cache_table(db)
 
     lo, hi = sorted([req.chapter_a, req.chapter_b])
-    cache_key = f"{lo}-{hi}"
+    # Cache key includes model so Claude and GPT-4o results are stored separately
+    cache_key = f"{lo}-{hi}-{req.model}"
 
     if not req.force:
         cached = db.execute(
@@ -143,26 +125,19 @@ def psyche_diff(req: DiffRequest, db: sqlite_utils.Database = Depends(get_db)):
     a = _fetch_chapter(db, req.chapter_a)
     b = _fetch_chapter(db, req.chapter_b)
 
-    client, model = _get_chat_client()
     prompt = _build_prompt(a, b)
+    messages = [{"role": "user", "content": prompt}]
+    narrative, model_used = llm_chat(messages, model=req.model, max_tokens=600, temperature=0.7)
 
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=600,
-        temperature=0.7,
-    )
-    narrative = resp.choices[0].message.content.strip()
-
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
     db["diffs"].upsert({
         "id": cache_key,
         "chapter_a": req.chapter_a,
         "chapter_b": req.chapter_b,
+        "model_key": req.model,
         "narrative": narrative,
-        "model": model,
+        "model": model_used,
         "created_at": now,
     }, pk="id")
 
@@ -172,7 +147,7 @@ def psyche_diff(req: DiffRequest, db: sqlite_utils.Database = Depends(get_db)):
         "chapter_a_data": a,
         "chapter_b_data": b,
         "narrative": narrative,
-        "model": model,
+        "model": model_used,
         "cached": False,
         "created_at": now,
     }

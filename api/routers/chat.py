@@ -7,11 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import sqlite_utils
 
+from api.constants import IST_OFFSET
 from api.db import get_db
 from api.vec import embed_query, search_table
 from api.llm import chat as llm_chat, available_models
-
-IST_OFFSET = "+330 minutes"
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -48,25 +47,30 @@ def _fmt_reflections(rows: list[dict]) -> str:
 
 
 def _enrich_videos(rows: list[dict], db: sqlite_utils.Database) -> list[dict]:
-    """Add first_seen_ist, last_seen_ist, chapters_seen to each video row."""
+    """Add first_seen_ist, last_seen_ist, chapters_seen to each video row (single batched query)."""
+    video_ids = [r["video_id"] for r in rows if r.get("video_id")]
+    if not video_ids:
+        return rows
+    placeholders = ",".join("?" * len(video_ids))
+    enriched = db.execute(f"""
+        SELECT
+            w.video_id,
+            MIN(datetime(w.watched_at, '{IST_OFFSET}')) AS first_seen,
+            MAX(datetime(w.watched_at, '{IST_OFFSET}')) AS last_seen,
+            GROUP_CONCAT(DISTINCT c.label)              AS chapters
+        FROM watches w
+        LEFT JOIN chapters c
+               ON datetime(w.watched_at, '{IST_OFFSET}') BETWEEN c.start_at AND c.end_at
+        WHERE w.video_id IN ({placeholders})
+        GROUP BY w.video_id
+    """, video_ids).fetchall()
+    lookup = {e[0]: e for e in enriched}
     for r in rows:
-        vid = r.get("video_id")
-        if not vid:
-            continue
-        row = db.execute(f"""
-            SELECT
-                MIN(datetime(w.watched_at, '{IST_OFFSET}')) AS first_seen,
-                MAX(datetime(w.watched_at, '{IST_OFFSET}')) AS last_seen,
-                GROUP_CONCAT(DISTINCT c.label)              AS chapters
-            FROM watches w
-            LEFT JOIN chapters c
-                   ON datetime(w.watched_at, '{IST_OFFSET}') BETWEEN c.start_at AND c.end_at
-            WHERE w.video_id = ?
-        """, [vid]).fetchone()
-        if row:
-            r["first_seen_ist"] = (row[0] or "")[:10]
-            r["last_seen_ist"]  = (row[1] or "")[:10]
-            r["chapters_seen"]  = row[2] or ""
+        e = lookup.get(r.get("video_id"))
+        if e:
+            r["first_seen_ist"] = (e[1] or "")[:10]
+            r["last_seen_ist"]  = (e[2] or "")[:10]
+            r["chapters_seen"]  = e[3] or ""
     return rows
 
 

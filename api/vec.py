@@ -15,7 +15,10 @@ def get_ldb() -> lancedb.DBConnection:
     global _ldb
     if _ldb is None:
         if not LANCEDB_PATH.exists():
-            print("ERROR: lancedb/ not found. Run embed.py first.", file=sys.stderr)
+            raise RuntimeError(
+                f"lancedb/ directory not found at {LANCEDB_PATH}. "
+                "Run embed.py first to build the vector index."
+            )
         _ldb = lancedb.connect(str(LANCEDB_PATH))
     return _ldb
 
