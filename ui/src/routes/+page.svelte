@@ -31,7 +31,7 @@
 	};
 
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'night' | 'month' | 'chapters' | 'search' | 'diff';
+	type View = 'night' | 'month' | 'chapters' | 'search' | 'diff' | 'chat';
 	let selectedView: View = $state('night');
 
 	// ── night view ───────────────────────────────────────────────────────────────
@@ -208,6 +208,77 @@
 		}
 	}
 
+	// ── chat view ─────────────────────────────────────────────────────────────────
+	type Source = { kind: string; label: string; similarity: number | null; };
+	type ChatMessage = {
+		role: 'user' | 'assistant';
+		content: string;
+		model?: string;
+		sources?: Source[];
+		error?: boolean;
+	};
+
+	let chatHistory: ChatMessage[] = $state([]);
+	let chatInput: string = $state('');
+	let chatModel: string = $state('auto');
+	let chatStart: string = $state('');
+	let chatEnd: string = $state('');
+	let chatLoading: boolean = $state(false);
+	let availableModels: string[] = $state([]);
+	let chatModelsLoaded: boolean = $state(false);
+
+	async function loadChatModels() {
+		if (chatModelsLoaded) return;
+		try {
+			const res = await fetch('/api/chat/models');
+			if (res.ok) { const d = await res.json(); availableModels = d.models; }
+		} catch { /* ignore */ }
+		chatModelsLoaded = true;
+	}
+
+	async function sendChat() {
+		const q = chatInput.trim();
+		if (!q || chatLoading) return;
+		chatInput = '';
+		chatHistory = [...chatHistory, { role: 'user', content: q }];
+		chatLoading = true;
+		try {
+			const body: Record<string, unknown> = { question: q, model: chatModel };
+			if (chatStart && chatEnd) body.time_range = { start: chatStart, end: chatEnd };
+			const res = await fetch('/api/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.detail ?? `${res.status}`);
+			}
+			const d = await res.json();
+			chatHistory = [...chatHistory, {
+				role: 'assistant',
+				content: d.answer,
+				model: d.model,
+				sources: d.sources,
+			}];
+		} catch (e) {
+			chatHistory = [...chatHistory, { role: 'assistant', content: String(e), error: true }];
+		} finally {
+			chatLoading = false;
+		}
+	}
+
+	function onChatKey(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+	}
+
+	function simColor(s: number | null) {
+		if (s == null) return '#6b7280';
+		if (s >= 0.40) return '#22c55e';
+		if (s >= 0.25) return '#eab308';
+		return '#6b7280';
+	}
+
 	// ── lifecycle ─────────────────────────────────────────────────────────────────
 	onMount(() => loadNight());
 
@@ -217,6 +288,7 @@
 		if (v === 'month') loadMonth(true);
 		if (v === 'chapters' && !chaptersLoaded) loadChapters();
 		if (v === 'diff') loadDiffChapters();
+		if (v === 'chat') loadChatModels();
 	}
 
 	function fmtDate(d: string) { return d.slice(0, 10); }
@@ -244,6 +316,9 @@
 			</button>
 			<button class:active={selectedView === 'diff'} onclick={() => switchView('diff')}>
 				Psyche Diff
+			</button>
+			<button class:active={selectedView === 'chat'} onclick={() => switchView('chat')}>
+				Ask Echo
 			</button>
 		</nav>
 	</header>
@@ -412,6 +487,105 @@
 					cached={diffResult.cached}
 				/>
 			{/if}
+		</section>
+	{/if}
+
+	<!-- ── Chat view ─────────────────────────────────────────────────── -->
+	{#if selectedView === 'chat'}
+		<section class="chat-section">
+			<div class="view-header">
+				<h2>Ask Echo</h2>
+				<span class="dim" style="font-size:0.75rem">RAG across your watch history, arcs, and search queries</span>
+			</div>
+
+			<!-- Controls row -->
+			<div class="chat-controls">
+				<select class="search-select" bind:value={chatModel}>
+					<option value="auto">Auto (Claude preferred)</option>
+					{#if availableModels.includes('claude')}
+						<option value="claude">Claude Sonnet 4.6</option>
+					{/if}
+					{#if availableModels.includes('gpt4o')}
+						<option value="gpt4o">GPT-4o</option>
+					{/if}
+				</select>
+				<span class="dim" style="font-size:0.72rem;padding:0 0.25rem">Time filter (optional):</span>
+				<input type="date" class="date-input" bind:value={chatStart} min="2019-12-01" max="2026-05-31" />
+				<span class="dim" style="font-size:0.72rem">→</span>
+				<input type="date" class="date-input" bind:value={chatEnd}   min="2019-12-01" max="2026-05-31" />
+				{#if chatStart || chatEnd}
+					<button class="diff-btn-ghost" onclick={() => { chatStart = ''; chatEnd = ''; }}>Clear</button>
+				{/if}
+			</div>
+
+			<!-- Message thread -->
+			<div class="chat-thread">
+				{#if chatHistory.length === 0}
+					<div class="chat-empty">
+						<p>Ask anything about your six years of watching.</p>
+						<div class="chat-suggestions">
+							{#each [
+								'What was I watching the week before JEE Advanced?',
+								'When did I start watching philosophy content?',
+								'What do my late-night watches say about my state of mind?',
+								'What chapters had the most concentrated viewing habits?',
+							] as suggestion}
+								<button class="suggestion" onclick={() => { chatInput = suggestion; }}>
+									{suggestion}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#each chatHistory as msg}
+					<div class="msg msg-{msg.role}" class:error={msg.error}>
+						<div class="msg-bubble">
+							<p class="msg-text">{msg.content}</p>
+						</div>
+						{#if msg.role === 'assistant' && !msg.error}
+							<div class="msg-meta">
+								{#if msg.model}<span class="msg-model">{msg.model}</span>{/if}
+								{#if msg.sources && msg.sources.length > 0}
+									<span class="msg-sources">
+										{#each msg.sources.slice(0, 6) as src}
+											<span class="src-chip" style="border-color:{simColor(src.similarity)}">
+												{src.label.length > 40 ? src.label.slice(0, 40) + '…' : src.label}
+												{#if src.similarity != null}
+													<span style="color:{simColor(src.similarity)}">{(src.similarity * 100).toFixed(0)}%</span>
+												{/if}
+											</span>
+										{/each}
+									</span>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/each}
+
+				{#if chatLoading}
+					<div class="msg msg-assistant">
+						<div class="msg-bubble loading">
+							<span class="dot"></span><span class="dot"></span><span class="dot"></span>
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Input -->
+			<div class="chat-input-row">
+				<textarea
+					class="chat-textarea"
+					bind:value={chatInput}
+					onkeydown={onChatKey}
+					placeholder="Ask about your history… (Enter to send, Shift+Enter for newline)"
+					rows="2"
+					disabled={chatLoading}
+				></textarea>
+				<button class="diff-btn" onclick={sendChat} disabled={chatLoading || !chatInput.trim()}>
+					Send
+				</button>
+			</div>
 		</section>
 	{/if}
 
@@ -654,6 +828,157 @@
 		letter-spacing: 0.08em;
 		color: #6b7280;
 	}
+
+	/* ── chat ────────────────────────────────────────────────────────── */
+	.chat-section { display: flex; flex-direction: column; }
+
+	.chat-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.date-input {
+		background: #111827;
+		border: 1px solid #1f2937;
+		color: #d1d5db;
+		padding: 0.3rem 0.5rem;
+		border-radius: 5px;
+		font-size: 0.8rem;
+	}
+
+	.chat-thread {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+		min-height: 120px;
+	}
+
+	.chat-empty {
+		padding: 1.5rem;
+		text-align: center;
+		color: #4b5563;
+		border: 1px dashed #1f2937;
+		border-radius: 8px;
+	}
+	.chat-empty p { margin: 0 0 1rem; font-size: 0.85rem; }
+
+	.chat-suggestions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		align-items: stretch;
+		max-width: 500px;
+		margin: 0 auto;
+	}
+
+	.suggestion {
+		background: #0d1117;
+		border: 1px solid #1f2937;
+		color: #6b7280;
+		padding: 0.4rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.78rem;
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.15s;
+	}
+	.suggestion:hover { border-color: #374151; color: #9ca3af; }
+
+	.msg { display: flex; flex-direction: column; }
+	.msg-user { align-items: flex-end; }
+	.msg-assistant { align-items: flex-start; }
+
+	.msg-bubble {
+		max-width: 85%;
+		padding: 0.65rem 0.9rem;
+		border-radius: 8px;
+		font-size: 0.85rem;
+		line-height: 1.6;
+	}
+	.msg-user .msg-bubble {
+		background: #1e1b4b;
+		border: 1px solid #312e81;
+		color: #e0e7ff;
+	}
+	.msg-assistant .msg-bubble {
+		background: #0d1117;
+		border: 1px solid #1f2937;
+		color: #d1d5db;
+	}
+	.msg.error .msg-bubble { border-color: #7f1d1d; color: #fca5a5; }
+
+	.msg-text { margin: 0; white-space: pre-wrap; }
+
+	.msg-meta {
+		margin-top: 0.35rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		max-width: 85%;
+	}
+
+	.msg-model { font-size: 0.65rem; color: #374151; }
+
+	.msg-sources { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+	.src-chip {
+		font-size: 0.62rem;
+		padding: 2px 6px;
+		border-radius: 3px;
+		background: #0d1117;
+		border: 1px solid #1f2937;
+		color: #6b7280;
+		display: flex;
+		gap: 0.3rem;
+		align-items: center;
+	}
+
+	/* loading dots */
+	.loading {
+		display: flex;
+		gap: 4px;
+		align-items: center;
+		padding: 0.75rem 1rem;
+	}
+	.dot {
+		width: 6px; height: 6px;
+		background: #4b5563;
+		border-radius: 50%;
+		animation: blink 1.2s infinite;
+	}
+	.dot:nth-child(2) { animation-delay: 0.2s; }
+	.dot:nth-child(3) { animation-delay: 0.4s; }
+	@keyframes blink {
+		0%, 80%, 100% { opacity: 0.2; }
+		40% { opacity: 1; }
+	}
+
+	.chat-input-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: flex-end;
+	}
+
+	.chat-textarea {
+		flex: 1;
+		background: #111827;
+		border: 1px solid #374151;
+		color: #f3f4f6;
+		padding: 0.6rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		font-family: inherit;
+		resize: none;
+		line-height: 1.5;
+	}
+	.chat-textarea:focus { outline: none; border-color: #4f46e5; }
+	.chat-textarea:disabled { opacity: 0.5; }
+	.chat-textarea::placeholder { color: #374151; }
 
 	.chapter-grid {
 		display: grid;
