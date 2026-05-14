@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     top_watches: int = 20            # watch rows from SQLite when time_range given
     min_session_depth: int = 5       # binge sessions of at least this many videos
     top_sessions: int = 10           # max binge sessions to include
+    include_reflections: bool = True # set False to skip chapter arc context
 
 
 class ChatSource(BaseModel):
@@ -295,7 +296,7 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
     vector = embed_query(req.question)
 
     # 2. Semantic retrieval from lancedb (all 4 tables)
-    reflections    = search_table("reflections",    vector, top=req.top_semantic)
+    reflections    = search_table("reflections", vector, top=req.top_semantic) if req.include_reflections else []
     videos         = search_table("videos",         vector, top=req.top_semantic)
     yt_searches    = search_table("searches",       vector, top=req.top_semantic)
     google_results = search_table("google_searches", vector, top=req.top_semantic)

@@ -150,6 +150,7 @@
 		reflections: 'Chapter arcs',
 		videos: 'Videos',
 		searches: 'YouTube searches',
+		google_searches: 'Google searches',
 	};
 
 	// ── diff view ─────────────────────────────────────────────────────────────────
@@ -171,6 +172,7 @@
 	let diffChaptersLoaded: boolean = $state(false);
 	let diffSelA: number = $state(2);
 	let diffSelB: number = $state(5);
+	let diffModel: string = $state('auto');
 	let diffLoading: boolean = $state(false);
 	let diffError: string = $state('');
 	let diffResult: DiffResult | null = $state(null);
@@ -197,7 +199,7 @@
 			const res = await fetch('/api/diff', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ chapter_a: diffSelA, chapter_b: diffSelB, force }),
+				body: JSON.stringify({ chapter_a: diffSelA, chapter_b: diffSelB, force, model: diffModel }),
 			});
 			if (!res.ok) {
 				const err = await res.json();
@@ -226,6 +228,7 @@
 	let chatModel: string = $state('auto');
 	let chatStart: string = $state('');
 	let chatEnd: string = $state('');
+	let chatIncludeReflections: boolean = $state(false);
 	let chatLoading: boolean = $state(false);
 	let availableModels: string[] = $state([]);
 	let chatModelsLoaded: boolean = $state(false);
@@ -246,7 +249,7 @@
 		chatHistory = [...chatHistory, { role: 'user', content: q }];
 		chatLoading = true;
 		try {
-			const body: Record<string, unknown> = { question: q, model: chatModel };
+			const body: Record<string, unknown> = { question: q, model: chatModel, include_reflections: chatIncludeReflections };
 			if (chatStart && chatEnd) body.time_range = { start: chatStart, end: chatEnd };
 			const res = await fetch('/api/chat', {
 				method: 'POST',
@@ -290,7 +293,7 @@
 		if (v === 'night' && !nightLoaded) loadNight();
 		if (v === 'month') loadMonth(true);
 		if (v === 'chapters' && !chaptersLoaded) loadChapters();
-		if (v === 'diff') loadDiffChapters();
+		if (v === 'diff') { loadDiffChapters(); loadChatModels(); }
 		if (v === 'chat') loadChatModels();
 	}
 
@@ -463,6 +466,15 @@
 						<option value={ch.id}>Ch {ch.id} — {ch.label} ({ch.start_at.slice(0,7)})</option>
 					{/each}
 				</select>
+				<select class="search-select" bind:value={diffModel}>
+					<option value="auto">Auto (Claude preferred)</option>
+					{#if availableModels.includes('claude')}
+						<option value="claude">Claude Sonnet 4.6</option>
+					{/if}
+					{#if availableModels.includes('gpt4o')}
+						<option value="gpt4o">GPT-4o</option>
+					{/if}
+				</select>
 				<button
 					class="diff-btn"
 					onclick={() => runDiff(false)}
@@ -521,6 +533,10 @@
 				{#if chatStart || chatEnd}
 					<button class="diff-btn-ghost" onclick={() => { chatStart = ''; chatEnd = ''; }}>Clear</button>
 				{/if}
+				<label class="chat-toggle" title="Uncheck to skip chapter arc summaries and answer from raw data only">
+					<input type="checkbox" bind:checked={chatIncludeReflections} />
+					<span class="dim" style="font-size:0.72rem">Chapter context</span>
+				</label>
 			</div>
 
 			<!-- Message thread -->
@@ -843,6 +859,14 @@
 		gap: 0.4rem;
 		margin-bottom: 1rem;
 		flex-wrap: wrap;
+	}
+
+	.chat-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		cursor: pointer;
+		margin-left: 0.25rem;
 	}
 
 	.date-input {

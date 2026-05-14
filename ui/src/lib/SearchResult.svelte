@@ -12,13 +12,13 @@
 			title?: string;
 			channel?: string;
 			watch_count?: number;
-			// searches
+			// searches (yt + google)
 			query?: string;
 			count?: number;
 			first_seen?: string;
 			last_seen?: string;
 		};
-		table: 'reflections' | 'videos' | 'searches';
+		table: 'reflections' | 'videos' | 'searches' | 'google_searches';
 	};
 
 	let { result, table }: Props = $props();
@@ -68,6 +68,12 @@
 		<div class="body">
 			<p class="query">"{result.query}"</p>
 			<p class="label">searched {result.count}× &nbsp;·&nbsp; {fmtDate(result.first_seen)} – {fmtDate(result.last_seen)}</p>
+		</div>
+
+	{:else if table === 'google_searches'}
+		<div class="body">
+			<p class="query">"{result.query}"</p>
+			<p class="label">googled {result.count}× &nbsp;·&nbsp; {fmtDate(result.first_seen)} – {fmtDate(result.last_seen)}</p>
 		</div>
 	{/if}
 </div>
