@@ -3,6 +3,7 @@
 	import TimelineCard from '$lib/TimelineCard.svelte';
 	import SearchResult from '$lib/SearchResult.svelte';
 	import DiffView from '$lib/DiffView.svelte';
+	import SpeakView from '$lib/SpeakView.svelte';
 
 	type WatchItem = {
 		watch_id: number;
@@ -31,7 +32,7 @@
 	};
 
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'sessions' | 'agency' | 'chapters' | 'search' | 'diff' | 'chat';
+	type View = 'sessions' | 'agency' | 'chapters' | 'search' | 'diff' | 'chat' | 'speak';
 	let selectedView: View = $state('sessions');
 
 	// ── binge sessions view ───────────────────────────────────────────────────────
@@ -354,6 +355,9 @@
 			</button>
 			<button class:active={selectedView === 'chat'} onclick={() => switchView('chat')}>
 				Ask Echo
+			</button>
+			<button class:active={selectedView === 'speak'} onclick={() => switchView('speak')}>
+				Echo Speaks
 			</button>
 		</nav>
 	</header>
@@ -688,6 +692,17 @@
 					Send
 				</button>
 			</div>
+		</section>
+	{/if}
+
+	<!-- ── Echo Speaks view ─────────────────────────────────────────── -->
+	{#if selectedView === 'speak'}
+		<section>
+			<div class="view-header">
+				<h2>Echo Speaks</h2>
+				<span class="dim" style="font-size:0.75rem">Autonomous agentic analysis</span>
+			</div>
+			<SpeakView />
 		</section>
 	{/if}
 
