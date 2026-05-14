@@ -98,12 +98,50 @@ This is already handled correctly in reflect.py. Don't use `start_date BETWEEN` 
 
 ---
 
-### `google_searches`, `discover_feed`, `transactions`
+### `google_searches`
 
-Supporting context tables. See schema in ingest.py for column details.
-- `google_searches` — Google Search queries, 2024–2026 only (1-year Chrome retention)
-- `discover_feed` — Daily Google Discover topic snapshots, 2020–2026
-- `transactions` — Google Pay sent/received amounts, depends on your data
+Google Search queries extracted from My Activity Takeout.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | |
+| query | TEXT | Raw search string |
+| searched_at | TEXT | UTC ISO-8601 timestamp |
+
+**Coverage:** 2024–2026 only. Chrome retains 1 year of search history in Takeout exports; older searches are not present.
+**Dedup:** UNIQUE(query, searched_at) — same query at the same timestamp is deduplicated.
+**Row count:** ~4,038 entries; ~3,211 unique queries (used in the lancedb `google_searches` table).
+**Note:** Distinct from `yt_searches` — these are Google web searches, not YouTube searches.
+
+---
+
+### `discover_feed`
+
+Daily Google Discover topic snapshots from My Activity Takeout.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | |
+| snapshot_at | TEXT | UTC ISO-8601 timestamp |
+| all_topics | TEXT | JSON array of all topics shown in that snapshot |
+| viewed_topics | TEXT | JSON array of topics the user clicked on |
+
+**Coverage:** 2020–2026, 521 snapshots.
+
+---
+
+### `transactions`
+
+Google Pay sent/received amounts from My Activity Takeout.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | |
+| amount_inr | REAL | Amount in INR |
+| direction | TEXT | `'sent'` or `'received'` |
+| transacted_at | TEXT | UTC ISO-8601 timestamp |
+
+**Coverage:** depends on your Google Pay activity history.
 
 ---
 
@@ -180,6 +218,113 @@ GPT-4o generated narrative reflections.
 | created_at | TEXT | UTC timestamp |
 
 **Note:** Rows are appended on each run — re-running adds new rows, doesn't overwrite. Compare runs by `created_at` to see how reflections evolve with new data.
+
+---
+
+## lancedb vector index (populated by embed.py)
+
+Stored in `./lancedb/` (not committed — gitignored, regenerable from echo.db).
+Model: `text-embedding-3-small`, 1536 dimensions. Each table has a `vector` column plus the source columns below.
+
+### `reflections` (lancedb)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| chapter_id | int | FK → chapters.id |
+| start_at | str | Chapter start ISO date |
+| end_at | str | Chapter end ISO date |
+| text | str | Full chapter arc narrative (the field embedded) |
+
+16 rows (one per chapter). Used for semantic "what does this chapter feel like?" queries.
+Tagged `[NARRATIVE]` in Echo Speaks — orientation only, not primary evidence.
+
+### `videos` (lancedb)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| video_id | str | YouTube video ID |
+| title | str | Video title (from video_metadata if available, else watches.title) |
+| channel | str | Channel name |
+| watch_count | int | How many times watched |
+| max_rewatch_count | int | Highest rewatch_count across all watch_signals rows for this video |
+| text | str | `"title | channel"` — the field embedded |
+
+5,790 rows (one per unique video). Used for content-level semantic search.
+Tagged `[SEMANTIC-RAW]` in Echo Speaks.
+
+### `searches` (lancedb)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| query | str | YouTube search query |
+| count | int | How many times this query appeared |
+| first_seen | str | ISO date of first occurrence |
+| last_seen | str | ISO date of last occurrence |
+| text | str | The query string (the field embedded) |
+
+349 rows (unique YouTube search queries). Used for intent-level semantic search.
+Tagged `[SEMANTIC-RAW]` in Echo Speaks.
+
+### `google_searches` (lancedb)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| query | str | Google search query |
+| count | int | How many times this query appeared |
+| first_seen | str | ISO date of first occurrence |
+| last_seen | str | ISO date of last occurrence |
+| text | str | The query string (the field embedded) |
+
+3,211 rows (unique Google search queries). Used for web-intent semantic search.
+Tagged `[SEMANTIC-RAW]` in Echo Speaks.
+
+---
+
+## API endpoint response contracts
+
+### `GET /api/insights/sessions`
+
+Query params: `limit` (default 50, max 200), `min_depth` (default 5, min 2).
+
+Returns `{"sessions": [...]}` where each session object has:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| session_id | int | Sequential session ID (from watch_signals) |
+| depth | int | Total videos in session (`session_length`) |
+| session_start | str | IST datetime of first watch |
+| session_end | str | IST datetime of last watch |
+| duration_min | int | Session wall-clock duration in minutes |
+| watch_count | int | Actual watch rows in this session |
+| top_channel | str | Most-watched channel in this session (nullable) |
+| searched_count | int | Watches where `is_search_driven=1` |
+| autoplay_count | int | Watches where `is_autoplay=1` |
+| rewatch_count | int | Watches where `is_rewatch=1` |
+| start_hour | int | IST hour (0–23) session started |
+| is_night | bool | True if start_hour ≥ 23 or start_hour < 4 |
+| sample_titles | list[str] | First 3 video titles in chronological order |
+| shorts_pct | float | % of watches that are Shorts (duration < 60s) |
+| depth_pct | float | depth / max_depth * 100 (relative bar chart width) |
+
+### `GET /api/insights/agency`
+
+Returns `{"chapters": [...]}` where each chapter object has:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| chapter_id | int | chapters.id |
+| label | str | "Chapter N" |
+| start_at | str | Chapter start ISO date |
+| end_at | str | Chapter end ISO date |
+| total | int | Total watches in chapter |
+| searched | int | Watches where `is_search_driven=1` |
+| bookmarked | int | Watches where `was_bookmarked=1` |
+| autoplay | int | Watches where `is_autoplay=1` |
+| rewatch | int | Watches where `is_rewatch=1` |
+| searched_pct | float | searched / total * 100 |
+| bookmarked_pct | float | bookmarked / total * 100 |
+| autoplay_pct | float | autoplay / total * 100 |
+| rewatch_pct | float | rewatch / total * 100 |
 
 ---
 

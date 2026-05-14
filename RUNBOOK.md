@@ -7,13 +7,25 @@ For what tables/columns mean, see DATA.md.
 
 ## Prerequisites
 
-```
-pip install sqlite-utils ruptures numpy matplotlib openai
+```bash
+pip install -r requirements.txt
 ```
 
+`requirements.txt` covers: `sqlite-utils`, `ruptures`, `numpy`, `lancedb`, `openai`,
+`google-api-python-client`, `icalendar`, `pyyaml`, `fastapi[all]`, `uvicorn[standard]`,
+`anthropic`, `langfuse`, `pytest`, `httpx`.
+
 API keys go in `.env` (copy `.env.example` and fill in values):
-- `YOUTUBE_API_KEY` — required for enrich.py
-- `OPENAI_API_KEY` or `OPENROUTER_API_KEY` — required for reflect.py (OpenRouter used as fallback)
+
+| Key | Required for |
+|-----|-------------|
+| `YOUTUBE_API_KEY` | enrich.py |
+| `OPENAI_API_KEY` | embed.py (direct), reflect.py (direct) |
+| `OPENROUTER_API_KEY` | reflect.py / embed.py fallback; Echo Speaks (primary) |
+| `ANTHROPIC_API_KEY` | Echo Speaks (native Claude path, preferred) |
+| `LANGFUSE_PUBLIC_KEY` | Echo Speaks observability (optional) |
+| `LANGFUSE_SECRET_KEY` | Echo Speaks observability (optional) |
+| `LANGFUSE_HOST` | Echo Speaks observability (default: `https://cloud.langfuse.com`) |
 
 ---
 
@@ -22,7 +34,7 @@ API keys go in `.env` (copy `.env.example` and fill in values):
 Scripts must run in this order. Each step depends on the previous.
 
 ```
-ingest.py → enrich.py → detect.py → signals.py → reflect.py
+ingest.py → enrich.py → detect.py → signals.py → reflect.py → embed.py
 ```
 
 | Step | Script | Reads | Writes | Idempotent? |
@@ -32,6 +44,7 @@ ingest.py → enrich.py → detect.py → signals.py → reflect.py
 | 3 | `detect.py` | watches, video_metadata | chapters, chapter_fingerprints | Yes — drops and recomputes |
 | 4 | `signals.py` | watches, yt_searches, watch_later | watch_signals | Yes — drops and recomputes |
 | 5 | `reflect.py` | all tables | reflections | Yes — appends new rows |
+| 6 | `embed.py` | echo.db (reflections, videos, yt_searches, google_searches) | lancedb/ (4 tables) | Yes — drops and recreates each table |
 
 ### Step 1 — Ingest
 
@@ -102,6 +115,30 @@ reflect.py reads this file at prompt-build time and injects matching entries int
 the `LIFE CONTEXT` section of each chapter prompt. Add entries here whenever a
 chapter reflection misinterprets what the data represents.
 
+### Step 6 — Embed (Layer 4)
+
+```bash
+python embed.py                           # embed all 4 tables
+python embed.py --dry-run                 # show counts and sample texts, no API calls
+python embed.py --table reflections       # embed one table only
+python embed.py --table videos
+python embed.py --table searches
+python embed.py --table google_searches
+```
+
+Embeds 4 corpora into a local lancedb vector index at `./lancedb/`:
+
+| lancedb table | Source | Rows | Text field |
+|---------------|--------|------|------------|
+| `reflections` | reflections (kind='chapter') | 16 | Chapter arc narrative |
+| `videos` | watches + video_metadata | 5,790 | "title \| channel" |
+| `searches` | yt_searches (unique queries) | 349 | YouTube search query |
+| `google_searches` | google_searches (unique queries) | 3,211 | Google search query |
+
+Model: `text-embedding-3-small` (1536 dims). Prefers `OPENAI_API_KEY`, falls back to
+`OPENROUTER_API_KEY`. Idempotent — drops and recreates each table on every run.
+Must re-run after reflect.py if chapter reflections change.
+
 ---
 
 ## Echo UI (v2 — FastAPI + SvelteKit)
@@ -121,24 +158,109 @@ Open http://localhost:5173
 The Vite dev server proxies all `/api` requests to the FastAPI backend.
 No CORS configuration needed — both run on localhost.
 
-### Smoke checks
+### API endpoints
 
-```bash
-# night endpoint — expect 1097 rows
-curl http://127.0.0.1:8000/api/timeline/night | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'rows')"
-
-# chapters — expect 16 chapters
-curl http://127.0.0.1:8000/api/chapters | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'chapters')"
-```
-
-### API endpoints (Sprint 1)
+#### Timeline
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/health` | GET | Liveness check |
-| `/api/timeline/night` | GET | All 11 PM – 4 AM IST watches (1,097 rows) |
 | `/api/timeline?month=YYYY-MM&limit=200&offset=0` | GET | Watches for a given month, paginated |
+| `/api/timeline/night` | GET | All 11 PM – 4 AM IST watches (~1,097 rows) |
+
+#### Chapters & Search
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/api/chapters` | GET | All 16 chapters with fingerprints and reflections |
+| `/api/search?q=...&tables=videos,searches,google_searches,reflections&limit=10` | GET | Semantic search across lancedb tables |
+
+#### Psyche Diff
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/api/diff/chapters` | GET | — | Chapter list for diff selector |
+| `/api/diff` | POST | `{"chapter_a": 1, "chapter_b": 2, "model": "auto"}` | LLM narrative comparing two chapters |
+
+#### Ask Echo (RAG chat)
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/api/chat/models` | GET | — | Available LLM providers |
+| `/api/chat` | POST | `{"question": "...", "model": "auto", "include_chapters": false}` | RAG chatbot over behavioral data |
+
+`include_chapters` defaults to `false` — chapter arc narratives dominated answers and
+drowned out raw signals. Leave off unless specifically asking about chapter arcs.
+
+#### Insights
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/insights/sessions` | GET | Top 50 binge sessions (≥5 videos) ranked by depth |
+| `/api/insights/agency` | GET | Per-chapter agency breakdown: searched / bookmarked / autoplay / rewatch |
+
+#### Echo Speaks (agentic)
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/api/speak` | POST | `SpeakRequest` | Non-streaming: full JSON response after all rounds |
+| `/api/speak/stream` | POST | `SpeakRequest` | SSE streaming: events emitted per round as they happen |
+
+`SpeakRequest` fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `query` | required | What to investigate |
+| `model` | `"auto"` | `"auto"` / `"claude"` / `"gpt4o"` |
+| `max_rounds` | `20` | Maximum ReAct rounds before forced synthesis |
+| `narrative_blind_rounds` | `10` | Phase 1 length — reflections/chapter context blocked until this round |
+
+SSE event types: `rubric_start`, `rubric_done`, `round_start`, `phase_change`,
+`thought`, `action`, `observation`, `finish`, `error`, `format_error`.
+
+### Smoke checks
+
+```bash
+# health
+curl http://127.0.0.1:8000/api/health
+
+# chapters — expect 16
+curl http://127.0.0.1:8000/api/chapters | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'chapters')"
+
+# night watches — expect ~1097
+curl http://127.0.0.1:8000/api/timeline/night | python -c "import sys,json; d=json.load(sys.stdin); print(d['total'], 'rows')"
+
+# semantic search
+curl "http://127.0.0.1:8000/api/search?q=music&tables=videos&limit=3"
+
+# insights
+curl http://127.0.0.1:8000/api/insights/sessions | python -c "import sys,json; d=json.load(sys.stdin); print(len(d['sessions']), 'sessions')"
+curl http://127.0.0.1:8000/api/insights/agency | python -c "import sys,json; d=json.load(sys.stdin); print(len(d['chapters']), 'chapters')"
+
+# echo speaks (non-streaming)
+curl -X POST http://127.0.0.1:8000/api/speak \
+  -H "Content-Type: application/json" \
+  -d "{\"query\": \"What are the top 5 channels I watch?\", \"max_rounds\": 5}"
+```
+
+---
+
+## Echo Speaks — Observability (Langfuse)
+
+Echo Speaks traces every agent run to Langfuse. If `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` are in `.env`, traces appear at `https://cloud.langfuse.com`
+automatically. If keys are absent, tracing is a silent no-op.
+
+Each trace contains:
+- One root `echo-speaks` agent span (input = query, output = findings summary)
+- Per-round generation spans (`round-N`): model, token counts (input + output), truncated response
+- Per-round tool spans (`tool-<name>`): tool arguments, observation excerpt, source tag
+
+Token counts are emitted for every generation span, enabling per-query cost tracking
+in the Langfuse dashboard.
+
+To set up Langfuse: create a free project at `https://cloud.langfuse.com`, copy the
+public and secret keys into `.env`. No other configuration needed.
 
 ---
 
@@ -171,9 +293,9 @@ Schema TBD once the export format is known.
 
 ## Troubleshooting
 
-**`ModuleNotFoundError: No module named 'ruptures'`**
+**`ModuleNotFoundError`**
 ```bash
-pip install ruptures
+pip install -r requirements.txt
 ```
 
 **`enrich.py` quota exhausted (HTTP 403)**
@@ -183,7 +305,19 @@ YouTube API quota resets at midnight Pacific. Re-run the next day — it skips a
 `ingest.py`, `detect.py`, and `signals.py` are all idempotent — just re-run from the failing step.
 
 **`reflect.py` — no reflections appearing**
-Check that `OPENAI_API_KEY` or `OPENROUTER_API_KEY` is set in `.env`. If both are set, `OPENAI_API_KEY` takes priority. Run with `--dry-run` first to confirm prompts look right.
+Check that `OPENAI_API_KEY` or `OPENROUTER_API_KEY` is set in `.env`. Run with `--dry-run` first.
+
+**`embed.py` — lancedb table missing / search returns nothing**
+Re-run `python embed.py` to rebuild all 4 tables. Must be done after reflect.py if reflections changed.
+
+**Echo Speaks — agent hits round limit without synthesizing**
+Increase `max_rounds` in the request body (default 20). Check Langfuse traces to see which
+rounds were wasted on schema exploration — the system prompt should pre-empt this via
+`_fetch_schema_context()`, but very complex queries may still need more rounds.
+
+**Echo Speaks — Langfuse not receiving traces**
+Check `.env` has both `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`.
+The API server log will print `[observability] Langfuse connected: ...` on startup if keys are valid.
 
 ---
 
@@ -197,5 +331,9 @@ Check that `OPENAI_API_KEY` or `OPENROUTER_API_KEY` is set in `.env`. If both ar
 | `SESSION_GAP_MIN` | signals.py | 30 | Minutes between watches that starts a new session |
 | `SEARCH_WIN_MIN` | signals.py | 10 | Search window before watch for is_search_driven |
 | `AUTOPLAY_GAP_MIN` | signals.py | 3 | Max gap (min) for same-channel autoplay proxy |
+| `BATCH_SIZE` | embed.py | 512 | Inputs per embeddings API call (OpenAI hard limit: 2048) |
+| `max_rounds` | speak.py | 20 | Default ReAct rounds for Echo Speaks |
+| `narrative_blind_rounds` | speak.py | 10 | Rounds before chapter reflections are available to agent |
+| `_KEEP_FULL_ROUNDS` | speak.py | 4 | Rounds of full observation kept in agent context window |
 
 See inline comments in each script for reasoning behind each value.
