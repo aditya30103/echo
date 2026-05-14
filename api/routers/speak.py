@@ -328,24 +328,14 @@ def _validate_findings(raw: list) -> list[Finding]:
 def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
     """Yields event dicts. Both the JSON and SSE endpoints consume this."""
     lf    = get_langfuse()
-    trace = lf.trace(
-        name="echo-speaks",
-        input={"query": req.query, "max_rounds": req.max_rounds, "model": req.model},
-        tags=["echo-speaks"],
-    )
+    trace = lf.trace(query=req.query, max_rounds=req.max_rounds, model=req.model)
 
     try:
         stats          = _get_stats(db)
         schema_context = _fetch_schema_context(db)
 
         yield {"type": "rubric_start"}
-        rubric_gen = trace.generation(
-            name="rubric", model=req.model,
-            input=[{"role": "user", "content": "generate rubric"}],
-            metadata={"stats": stats},
-        )
         rubric = _generate_rubric(stats, req.model)
-        rubric_gen.end(output=rubric)
         yield {"type": "rubric_done", "rubric": rubric}
 
         system_template = _build_system_prompt(
@@ -387,20 +377,15 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 + _trim_history(history, _KEEP_FULL_ROUNDS)
             )
 
-            llm_gen = trace.generation(
-                name=f"round-{round_n}",
-                model=model_label,
-                input={"round": round_n, "phase": phase, "history_len": len(history)},
-                metadata={"round": round_n, "phase": phase},
-            )
+            llm_gen = trace.generation(round_n, model_label, len(history))
 
             try:
                 raw_response, model_label = llm_chat(
                     messages, model=req.model, max_tokens=1200, temperature=0.3,
                 )
-                llm_gen.end(output=raw_response)
+                llm_gen.done(raw_response[:500])
             except Exception as e:
-                llm_gen.end(output=str(e), level="ERROR")
+                llm_gen.done(str(e))
                 yield {"type": "error", "round": round_n, "message": str(e)}
                 break
 
@@ -435,22 +420,14 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     "model": model_label,
                     "hit_round_limit": False,
                 }
-                trace.update(output={
-                    "findings_count": len(findings),
-                    "rounds_used": round_n,
-                    "hit_limit": False,
-                })
+                trace.finish(len(findings), round_n, hit_limit=False)
                 yield finish_evt
                 return
 
-            tool_span = trace.span(
-                name=f"tool-{tool}",
-                input={**{k: str(v)[:200] for k, v in args.items()}, "_tool": tool},
-                metadata={"round": round_n, "phase": phase},
-            )
+            tool_span   = trace.tool(tool, args, round_n)
             observation = dispatch(tool, args, phase)
-            tag = _source_tag(observation)
-            tool_span.end(output={"result": observation[:400], "source_tag": tag})
+            tag         = _source_tag(observation)
+            tool_span.done(observation[:400], source_tag=tag)
 
             yield {"type": "observation", "round": round_n, "content": observation, "source_tag": tag}
 
@@ -469,7 +446,7 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             "model": model_label,
             "hit_round_limit": True,
         }
-        trace.update(output={"hit_limit": True, "rounds_used": req.max_rounds})
+        trace.finish(0, req.max_rounds, hit_limit=True)
         yield limit_evt
 
     finally:
