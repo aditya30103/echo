@@ -52,12 +52,19 @@ def top_sessions(
                     LEFT JOIN watch_signals ws2  ON ws2.watch_id = w2.id
                     WHERE ws2.session_id = ws.session_id
                       AND COALESCE(vm2.title, w2.title) IS NOT NULL
+                      AND COALESCE(vm2.title, w2.title) NOT LIKE 'http%'
                     ORDER BY w2.watched_at
                     LIMIT 3
                 )
-            )                                                   AS sample_titles
+            )                                                   AS sample_titles,
+            ROUND(
+                100.0 * SUM(CASE WHEN vm.duration_seconds IS NOT NULL AND vm.duration_seconds < 60 THEN 1 ELSE 0 END)
+                      / COUNT(*),
+                0
+            )                                                   AS shorts_pct
         FROM watch_signals ws
         JOIN watches w ON ws.watch_id = w.id
+        LEFT JOIN video_metadata vm ON w.video_id = vm.video_id
         WHERE ws.session_length >= ?
         GROUP BY ws.session_id
         ORDER BY MAX(ws.session_length) DESC
@@ -67,7 +74,7 @@ def top_sessions(
     keys = [
         "session_id", "depth", "session_start", "session_end",
         "duration_min", "watch_count", "top_channel",
-        "searched_count", "autoplay_count", "rewatch_count", "start_hour", "sample_titles",
+        "searched_count", "autoplay_count", "rewatch_count", "start_hour", "sample_titles", "shorts_pct",
     ]
     sessions = []
     for row in rows:

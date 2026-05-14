@@ -47,6 +47,7 @@
 		searched_count: number;
 		autoplay_count: number;
 		rewatch_count: number;
+		shorts_pct: number;
 		start_hour: number;
 		is_night: boolean;
 		sample_titles: string[];
@@ -399,6 +400,9 @@
 									</ul>
 								{/if}
 								<div class="session-signals">
+									{#if s.shorts_pct >= 50}
+										<span class="badge badge-shorts">{s.shorts_pct}% shorts</span>
+									{/if}
 									{#if s.searched_count > 0}
 										<span class="badge badge-searched">{s.searched_count} searched</span>
 									{/if}
@@ -828,7 +832,7 @@
 
 	.session-depth-bar-track {
 		width: 4px;
-		height: 32px;
+		height: 56px;
 		background: #1f2937;
 		border-radius: 2px;
 		display: flex;
@@ -880,6 +884,7 @@
 	.badge-searched { background: #1e3a5f; color: #93c5fd; }
 	.badge-autoplay { background: #1f2937; color: #9ca3af; }
 	.badge-rewatch  { background: #2d1b0e; color: #f59e0b; }
+	.badge-shorts   { background: #1a1a2e; color: #c084fc; }
 
 	.session-titles {
 		margin: 0.25rem 0 0.35rem;
