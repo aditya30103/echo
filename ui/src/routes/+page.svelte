@@ -38,6 +38,7 @@
 	type Session = {
 		session_id: number;
 		depth: number;
+		depth_pct: number;
 		session_start: string;
 		session_end: string;
 		duration_min: number;
@@ -45,8 +46,10 @@
 		top_channel: string;
 		searched_count: number;
 		autoplay_count: number;
+		rewatch_count: number;
 		start_hour: number;
 		is_night: boolean;
+		sample_titles: string[];
 	};
 	let sessions: Session[] = $state([]);
 	let sessionsLoading: boolean = $state(false);
@@ -368,7 +371,12 @@
 				<div class="sessions-list">
 					{#each sessions as s (s.session_id)}
 						<div class="session-card">
-							<div class="session-depth">{s.depth}</div>
+							<div class="session-left">
+								<div class="session-depth">{s.depth}<span class="session-depth-label">videos</span></div>
+								<div class="session-depth-bar-track">
+									<div class="session-depth-bar" style="height:{s.depth_pct}%"></div>
+								</div>
+							</div>
 							<div class="session-body">
 								<div class="session-meta">
 									<span class="session-date">{s.session_start.slice(0, 10)}</span>
@@ -383,12 +391,22 @@
 								{#if s.top_channel}
 									<p class="session-channel">{s.top_channel}</p>
 								{/if}
+								{#if s.sample_titles.length > 0}
+									<ul class="session-titles">
+										{#each s.sample_titles as title}
+											<li>{title}</li>
+										{/each}
+									</ul>
+								{/if}
 								<div class="session-signals">
 									{#if s.searched_count > 0}
 										<span class="badge badge-searched">{s.searched_count} searched</span>
 									{/if}
 									{#if s.autoplay_count > 0}
 										<span class="badge badge-autoplay">{s.autoplay_count} autoplay</span>
+									{/if}
+									{#if s.rewatch_count > 0}
+										<span class="badge badge-rewatch">{s.rewatch_count} rewatch</span>
 									{/if}
 								</div>
 							</div>
@@ -783,14 +801,47 @@
 		border-radius: 8px;
 	}
 
+	.session-left {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.35rem;
+		flex-shrink: 0;
+		width: 3rem;
+	}
+
 	.session-depth {
-		font-size: 1.5rem;
+		font-size: 1.4rem;
 		font-weight: 700;
 		color: #6366f1;
-		min-width: 2.5rem;
-		text-align: center;
 		line-height: 1;
-		padding-top: 2px;
+		text-align: center;
+	}
+
+	.session-depth-label {
+		display: block;
+		font-size: 0.6rem;
+		font-weight: 400;
+		color: #6b7280;
+		letter-spacing: 0.03em;
+	}
+
+	.session-depth-bar-track {
+		width: 4px;
+		height: 32px;
+		background: #1f2937;
+		border-radius: 2px;
+		display: flex;
+		align-items: flex-end;
+		overflow: hidden;
+	}
+
+	.session-depth-bar {
+		width: 100%;
+		background: #4f46e5;
+		border-radius: 2px;
+		min-height: 2px;
+		transition: height 0.3s ease;
 	}
 
 	.session-body { flex: 1; min-width: 0; }
@@ -828,6 +879,29 @@
 	.badge-night    { background: #1e1b4b; color: #a5b4fc; }
 	.badge-searched { background: #1e3a5f; color: #93c5fd; }
 	.badge-autoplay { background: #1f2937; color: #9ca3af; }
+	.badge-rewatch  { background: #2d1b0e; color: #f59e0b; }
+
+	.session-titles {
+		margin: 0.25rem 0 0.35rem;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.session-titles li {
+		font-size: 0.76rem;
+		color: #9ca3af;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.session-titles li::before {
+		content: '· ';
+		color: #374151;
+	}
 
 	/* ── agency map ──────────────────────────────────────────────────── */
 	.agency-table {

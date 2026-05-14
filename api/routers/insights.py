@@ -40,8 +40,22 @@ def top_sessions(
             )                                                   AS top_channel,
             SUM(ws.is_search_driven)                            AS searched_count,
             SUM(ws.is_autoplay)                                 AS autoplay_count,
+            SUM(ws.is_rewatch)                                  AS rewatch_count,
             CAST(strftime('%H', MIN(datetime(w.watched_at, '{IST_OFFSET}'))) AS INTEGER)
-                                                                AS start_hour
+                                                                AS start_hour,
+            (
+                SELECT GROUP_CONCAT(title_val, ' || ')
+                FROM (
+                    SELECT COALESCE(vm2.title, w2.title, '') AS title_val
+                    FROM watches w2
+                    LEFT JOIN video_metadata vm2 ON w2.video_id = vm2.video_id
+                    LEFT JOIN watch_signals ws2  ON ws2.watch_id = w2.id
+                    WHERE ws2.session_id = ws.session_id
+                      AND COALESCE(vm2.title, w2.title) IS NOT NULL
+                    ORDER BY w2.watched_at
+                    LIMIT 3
+                )
+            )                                                   AS sample_titles
         FROM watch_signals ws
         JOIN watches w ON ws.watch_id = w.id
         WHERE ws.session_length >= ?
@@ -53,14 +67,20 @@ def top_sessions(
     keys = [
         "session_id", "depth", "session_start", "session_end",
         "duration_min", "watch_count", "top_channel",
-        "searched_count", "autoplay_count", "start_hour",
+        "searched_count", "autoplay_count", "rewatch_count", "start_hour", "sample_titles",
     ]
     sessions = []
     for row in rows:
         s = dict(zip(keys, row))
         h = s["start_hour"]
         s["is_night"] = h is not None and (h >= 23 or h < 4)
+        raw = s.pop("sample_titles") or ""
+        s["sample_titles"] = [t.strip() for t in raw.split("||") if t.strip()]
         sessions.append(s)
+
+    max_depth = sessions[0]["depth"] if sessions else 1
+    for s in sessions:
+        s["depth_pct"] = round(s["depth"] / max_depth * 100, 1)
 
     return {"sessions": sessions}
 
