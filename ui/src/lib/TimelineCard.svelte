@@ -15,6 +15,8 @@
 		};
 	};
 
+	import { fmtDate } from '$lib/fmt';
+
 	let { item }: Props = $props();
 
 	const CHAPTER_COLORS = [
@@ -30,12 +32,11 @@
 	}
 
 	function formatTime(ist: string): string { return ist.slice(11, 16); }
-	function formatDate(ist: string): string { return ist.slice(0, 10); }
 
 	let title = $derived(item.title ?? item.video_id);
 	let channel = $derived(item.channel || '');
 	let hourStr = $derived(formatTime(item.watched_at_ist));
-	let dateStr = $derived(formatDate(item.watched_at_ist));
+	let dateStr = $derived(fmtDate(item.watched_at_ist));
 	let isRewatch = $derived(item.is_rewatch === 1);
 	let isDeepSession = $derived((item.session_depth ?? 0) > 3);
 </script>

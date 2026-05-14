@@ -325,7 +325,8 @@
 	}
 
 
-	function fmtDate(d: string) { return d.slice(0, 10); }
+	import { fmtDate } from '$lib/fmt';
+
 	function pct(n: number | null) { return n != null ? `${(n * 100).toFixed(0)}%` : '—'; }
 </script>
 
@@ -380,7 +381,7 @@
 							</div>
 							<div class="session-body">
 								<div class="session-meta">
-									<span class="session-date">{s.session_start.slice(0, 10)}</span>
+									<span class="session-date">{fmtDate(s.session_start)}</span>
 									<span class="session-time dim">{s.session_start.slice(11, 16)} – {s.session_end.slice(11, 16)}</span>
 									{#if s.duration_min > 0}
 										<span class="dim">· {s.duration_min} min</span>
@@ -390,7 +391,7 @@
 									{/if}
 								</div>
 								{#if s.top_channel}
-									<p class="session-channel">{s.top_channel}</p>
+									<p class="session-channel"><span class="dim" style="font-size:0.68rem">top channel · </span>{s.top_channel}</p>
 								{/if}
 								{#if s.sample_titles.length > 0}
 									<ul class="session-titles">
@@ -447,7 +448,7 @@
 							<div class="agency-chapter">
 								<span class="agency-ch-num">Ch {ch.chapter_id}</span>
 								<span class="agency-ch-label dim">{ch.label}</span>
-								<span class="agency-ch-date dim">{ch.start_at.slice(0, 7)}</span>
+								<span class="agency-ch-date dim">{fmtDate(ch.start_at)}</span>
 							</div>
 							<span class="agency-total">{ch.total.toLocaleString()}</span>
 							<div class="agency-bar-cell">
@@ -537,13 +538,13 @@
 			<div class="diff-controls">
 				<select class="diff-select" bind:value={diffSelA} onchange={() => diffResult = null}>
 					{#each diffChapters as ch}
-						<option value={ch.id}>Ch {ch.id} — {ch.label} ({ch.start_at.slice(0,7)})</option>
+						<option value={ch.id}>Ch {ch.id} — {ch.label} ({fmtDate(ch.start_at)})</option>
 					{/each}
 				</select>
 				<span class="vs">vs</span>
 				<select class="diff-select" bind:value={diffSelB} onchange={() => diffResult = null}>
 					{#each diffChapters as ch}
-						<option value={ch.id}>Ch {ch.id} — {ch.label} ({ch.start_at.slice(0,7)})</option>
+						<option value={ch.id}>Ch {ch.id} — {ch.label} ({fmtDate(ch.start_at)})</option>
 					{/each}
 				</select>
 				<select class="search-select" bind:value={diffModel}>

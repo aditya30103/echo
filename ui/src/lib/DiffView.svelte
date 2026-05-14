@@ -22,10 +22,11 @@
 		cached: boolean;
 	};
 
+	import { fmtDate } from '$lib/fmt';
+
 	let { a, b, narrative, model, cached }: Props = $props();
 
 	function pct(n: number | null) { return n != null ? `${(n * 100).toFixed(0)}%` : '—'; }
-	function fmtDate(d: string) { return d.slice(0, 7); }
 	function fmtDur(s: number | null) {
 		if (!s) return '—';
 		return s >= 60 ? `${(s / 60).toFixed(0)} min` : `${s.toFixed(0)} s`;

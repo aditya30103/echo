@@ -21,10 +21,11 @@
 		table: 'reflections' | 'videos' | 'searches' | 'google_searches';
 	};
 
+	import { fmtDate } from '$lib/fmt';
+
 	let { result, table }: Props = $props();
 
 	function pct(n: number) { return `${(n * 100).toFixed(0)}%`; }
-	function fmtDate(d: string | undefined) { return d ? d.slice(0, 7) : ''; }
 
 	// Similarity colour: green > 40%, yellow > 25%, grey otherwise
 	function simColor(s: number): string {
