@@ -51,16 +51,18 @@ _INSTRUCTION_TEMPLATE = """\
 ## Epistemic hierarchy — CRITICAL
 Observations are tagged by source. Honor these tiers strictly:
 - [RAW-SQL]: direct SQLite result — primary evidence, cite freely
-- [RAW-COMPUTED]: Python/pandas/numpy result — primary evidence, cite freely
+- [RAW-COMPUTED]: Python/pandas/numpy/scipy/sklearn result — primary evidence, cite freely
 - [SEMANTIC-RAW]: semantic search on raw tables — medium trust
-- [NARRATIVE]: chapter reflections or chapter context — ORIENTATION ONLY.
+- [EXTERNAL]: YouTube Data API or web search — supplementary context, medium confidence
+- [NARRATIVE]: chapter reflections — ORIENTATION ONLY.
   Reflections are LLM-generated, may embed user-provided biographical context.
   NEVER use [NARRATIVE] as primary evidence for a finding.
 
 ## Phase rules
 Rounds 1-{{narrative_blind_rounds}}: PHASE 1 - Narrative-blind.
-  Available: run_sql, execute_python, vector_search(videos|searches|google_searches)
-  BLOCKED: vector_search(reflections), get_chapter_context
+  Available: run_sql, execute_python, vector_search(videos|searches|google_searches),
+             run_pelt, run_clustering, youtube_lookup
+  BLOCKED: vector_search(reflections), run_sql on reflections table
   Form ALL hypotheses from raw behavioral data only.
 
 Rounds {{phase_2_start}}+: PHASE 2 - Verification allowed.
@@ -76,8 +78,9 @@ ACTION: {"tool": "<name>", "args": {<json>}}
 To finish:
 ACTION: {"tool": "finish", "args": {"findings": [{"claim": "...", "evidence": "...", "source_tag": "RAW-SQL", "confidence": "high"}], "side_insights": ["..."]}}
 
-findings.source_tag must be RAW-SQL, RAW-COMPUTED, or SEMANTIC-RAW.
-[NARRATIVE]-only findings go in side_insights with a note.
+findings.source_tag must be RAW-SQL, RAW-COMPUTED, SEMANTIC-RAW, or EXTERNAL.
+EXTERNAL findings: set confidence="medium" — they appear as supplementary in the response.
+[NARRATIVE]-only findings go in side_insights as strings.
 No prose outside the THOUGHT/ACTION block.
 """
 
@@ -176,6 +179,7 @@ class Finding(BaseModel):
     source_tag: str
     confidence: str
     narrative_derived: bool = False
+    side_insights: bool = False
 
 
 class SpeakResponse(BaseModel):
@@ -250,7 +254,7 @@ def _generate_rubric(stats: dict, model: str) -> str:
             [{"role": "user", "content": prompt}],
             model=model, max_tokens=400, temperature=0.5,
         )
-        return rubric
+        return rubric  # _* discards model_label, usage, stop_reason
     except Exception:
         return (
             "1. Quantitatively anomalous relative to the user's own baseline (not just 'high')\n"
@@ -336,14 +340,36 @@ def _validate_findings(raw: list) -> list[Finding]:
         if not isinstance(f, dict):
             continue
         tag = str(f.get("source_tag", "")).upper().replace("[", "").replace("]", "")
-        narrative_only = tag not in ("RAW-SQL", "RAW-COMPUTED", "SEMANTIC-RAW")
-        out.append(Finding(
-            claim=str(f.get("claim", "")),
-            evidence=str(f.get("evidence", "")),
-            source_tag=tag or "UNKNOWN",
-            confidence="low" if narrative_only else str(f.get("confidence", "medium")),
-            narrative_derived=narrative_only,
-        ))
+
+        if tag == "EXTERNAL":
+            # External API results: factual but supplementary — not primary evidence.
+            out.append(Finding(
+                claim=str(f.get("claim", "")),
+                evidence=str(f.get("evidence", "")),
+                source_tag=tag,
+                confidence="medium",
+                narrative_derived=False,
+                side_insights=True,
+            ))
+        elif tag in ("RAW-SQL", "RAW-COMPUTED", "SEMANTIC-RAW"):
+            out.append(Finding(
+                claim=str(f.get("claim", "")),
+                evidence=str(f.get("evidence", "")),
+                source_tag=tag,
+                confidence=str(f.get("confidence", "medium")),
+                narrative_derived=False,
+                side_insights=False,
+            ))
+        else:
+            # Unknown or NARRATIVE tag — treat as narrative-derived, low confidence.
+            out.append(Finding(
+                claim=str(f.get("claim", "")),
+                evidence=str(f.get("evidence", "")),
+                source_tag=tag or "UNKNOWN",
+                confidence="low",
+                narrative_derived=True,
+                side_insights=False,
+            ))
     return out
 
 
@@ -367,6 +393,14 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
         history: list[dict] = [{"role": "user", "content": req.query}]
         model_label = req.model
 
+        # Per-session state: shared across all dispatch() calls in this run.
+        session_state: dict = {}
+        # Tool call log: f"{tool}:{json_args}" per call — used for efficiency metric.
+        _tool_calls: list[str] = []
+        # Token accumulation for burn-rate metric.
+        _total_input_tokens  = 0
+        _total_output_tokens = 0
+
         for round_n in range(1, req.max_rounds + 1):
             phase = 1 if round_n <= req.narrative_blind_rounds else 2
 
@@ -375,9 +409,9 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 history.append({
                     "role": "user",
                     "content": (
-                        "[System: Phase 2 begins. vector_search(reflections) and "
-                        "get_chapter_context are now available — use only to verify "
-                        "Phase 1 hypotheses. [NARRATIVE] remains inadmissible as primary evidence.]"
+                        "[System: Phase 2 begins. vector_search(reflections) is now available "
+                        "— use only to verify Phase 1 hypotheses. "
+                        "[NARRATIVE] remains inadmissible as primary evidence.]"
                     ),
                 })
 
@@ -408,10 +442,15 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             llm_gen = trace.generation(round_n, model_label, len(history))
 
             try:
-                raw_response, model_label, usage = llm_chat(
+                raw_response, model_label, usage, stop_reason = llm_chat(
                     messages, model=req.model, max_tokens=2000, temperature=0.3,
                 )
+                _total_input_tokens  += usage.get("input_tokens", 0)
+                _total_output_tokens += usage.get("output_tokens", 0)
                 llm_gen.done(raw_response[:500], usage=usage, model=model_label)
+                # Langfuse: flag truncated rounds immediately.
+                if stop_reason in ("max_tokens", "length"):
+                    lf.score(trace.trace_id, "quality.truncated", 1.0)
             except Exception as e:
                 llm_gen.done(str(e))
                 yield {"type": "error", "round": round_n, "message": str(e)}
@@ -440,6 +479,17 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 raw_findings  = args.get("findings", [])
                 side_insights = [str(s) for s in args.get("side_insights", [])]
                 findings      = _validate_findings(raw_findings)
+
+                # Langfuse quality metrics at finish.
+                if _tool_calls:
+                    unique_combos  = len(set(_tool_calls))
+                    efficiency     = unique_combos / len(_tool_calls)
+                    lf.score(trace.trace_id, "quality.efficiency", round(efficiency, 3))
+                primary_count = sum(1 for f in findings if not f.side_insights)
+                if primary_count > 0 and _total_input_tokens > 0:
+                    burn_rate = _total_input_tokens / primary_count
+                    lf.score(trace.trace_id, "quality.token_burn_rate", round(burn_rate, 0))
+
                 trace.finish(len(findings), round_n, hit_limit=False)
                 finish_evt = {
                     "type": "finish",
@@ -454,9 +504,15 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 return
 
             tool_span   = trace.tool(tool, args, round_n)
-            observation = dispatch(tool, args, phase)
+            observation = dispatch(tool, args, phase, session_state)
             tag         = _source_tag(observation)
             tool_span.done(observation[:400], source_tag=tag)
+
+            # Track this call for efficiency metric (tool + serialised args).
+            try:
+                _tool_calls.append(f"{tool}:{json.dumps(args, sort_keys=True, default=str)}")
+            except Exception:
+                _tool_calls.append(tool)
 
             yield {"type": "observation", "round": round_n, "content": observation, "source_tag": tag}
 

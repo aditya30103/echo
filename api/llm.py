@@ -47,10 +47,11 @@ def chat(
     model: str = "auto",   # "auto" | "claude" | "gpt4o"
     max_tokens: int = 1024,
     temperature: float = 0.7,
-) -> tuple[str, str, dict]:
-    """Call an LLM and return (text, model_label, usage).
+) -> tuple[str, str, dict, str]:
+    """Call an LLM and return (text, model_label, usage, stop_reason).
 
     usage = {"input_tokens": int, "output_tokens": int}
+    stop_reason = "end_turn" | "max_tokens" | "stop" | "length" | "unknown"
     model="auto" → prefers Claude if ANTHROPIC_API_KEY is set, else GPT-4o.
     """
     _load_env()
@@ -76,7 +77,7 @@ def chat(
             timeout=60,
         )
         usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
-        return resp.content[0].text.strip(), "claude-sonnet-4-6", usage
+        return resp.content[0].text.strip(), "claude-sonnet-4-6", usage, str(resp.stop_reason or "unknown")
 
     # ── Claude via OpenRouter ────────────────────────────────────────────
     if want_claude and or_key and not want_gpt4o:
@@ -90,7 +91,7 @@ def chat(
             timeout=60,
         )
         usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
-        return resp.choices[0].message.content.strip(), "claude-sonnet-4-6 (OpenRouter)", usage
+        return resp.choices[0].message.content.strip(), "claude-sonnet-4-6 (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o direct ───────────────────────────────────────────────────
     if openai_key:
@@ -104,7 +105,7 @@ def chat(
             timeout=60,
         )
         usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
-        return resp.choices[0].message.content.strip(), "gpt-4o", usage
+        return resp.choices[0].message.content.strip(), "gpt-4o", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o via OpenRouter ────────────────────────────────────────────
     if or_key:
@@ -118,7 +119,7 @@ def chat(
             timeout=60,
         )
         usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
-        return resp.choices[0].message.content.strip(), "gpt-4o (OpenRouter)", usage
+        return resp.choices[0].message.content.strip(), "gpt-4o (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     raise RuntimeError(
         "No LLM API key found. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, "

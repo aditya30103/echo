@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import TimelineCard from '$lib/TimelineCard.svelte';
 	import SearchResult from '$lib/SearchResult.svelte';
-	import DiffView from '$lib/DiffView.svelte';
 	import SpeakView from '$lib/SpeakView.svelte';
 
 	type WatchItem = {
@@ -19,20 +18,8 @@
 		chapter_label: string | null;
 	};
 
-	type Chapter = {
-		id: number;
-		start_at: string;
-		end_at: string;
-		label: string;
-		reflection: string | null;
-		night_ratio: number | null;
-		modal_hour: number | null;
-		long_form_ratio: number | null;
-		top_categories: Record<string, number>;
-	};
-
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'sessions' | 'agency' | 'chapters' | 'search' | 'diff' | 'chat' | 'speak';
+	type View = 'sessions' | 'agency' | 'search' | 'chat' | 'speak';
 	let selectedView: View = $state('sessions');
 
 	// ── binge sessions view ───────────────────────────────────────────────────────
@@ -113,30 +100,6 @@
 		}
 	}
 
-	// ── chapters view ─────────────────────────────────────────────────────────────
-	let chapters: Chapter[] = $state([]);
-	let chaptersLoading: boolean = $state(false);
-	let chaptersError: string = $state('');
-	let chaptersLoaded: boolean = $state(false);
-	let expandedChapter: number | null = $state(null);
-
-	async function loadChapters() {
-		if (chaptersLoaded) return;
-		chaptersLoading = true;
-		chaptersError = '';
-		try {
-			const res = await fetch('/api/chapters');
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			const data = await res.json();
-			chapters = data.chapters;
-			chaptersLoaded = true;
-		} catch (e) {
-			chaptersError = String(e);
-		} finally {
-			chaptersLoading = false;
-		}
-	}
-
 	// ── search view ──────────────────────────────────────────────────────────────
 	type SearchRow = Record<string, unknown> & { similarity: number };
 	type SearchResults = Record<string, SearchRow[]>;
@@ -180,66 +143,6 @@
 		searches: 'YouTube searches',
 		google_searches: 'Google searches',
 	};
-
-	// ── diff view ─────────────────────────────────────────────────────────────────
-	type ChapterSummary = {
-		id: number; label: string; start_at: string; end_at: string;
-		night_ratio: number | null; modal_hour: number | null;
-		long_form_ratio: number | null; shorts_ratio: number | null;
-		channel_density_score: number | null; median_duration_seconds: number | null;
-		top_categories: Record<string, number>;
-	};
-	type DiffResult = {
-		chapter_a: number; chapter_b: number;
-		chapter_a_data: ChapterSummary & { reflection?: string | null };
-		chapter_b_data: ChapterSummary & { reflection?: string | null };
-		narrative: string; model: string; cached: boolean; created_at: string;
-	};
-
-	let diffChapters: ChapterSummary[] = $state([]);
-	let diffChaptersLoaded: boolean = $state(false);
-	let diffSelA: number = $state(2);
-	let diffSelB: number = $state(5);
-	let diffModel: string = $state('auto');
-	let diffLoading: boolean = $state(false);
-	let diffError: string = $state('');
-	let diffResult: DiffResult | null = $state(null);
-
-	async function loadDiffChapters() {
-		if (diffChaptersLoaded) return;
-		try {
-			const res = await fetch('/api/diff/chapters');
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			const d = await res.json();
-			diffChapters = d.chapters;
-			diffChaptersLoaded = true;
-		} catch (e) {
-			diffError = String(e);
-		}
-	}
-
-	async function runDiff(force = false) {
-		if (diffSelA === diffSelB) return;
-		diffLoading = true;
-		diffError = '';
-		diffResult = null;
-		try {
-			const res = await fetch('/api/diff', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ chapter_a: diffSelA, chapter_b: diffSelB, force, model: diffModel }),
-			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail ?? `${res.status}`);
-			}
-			diffResult = await res.json();
-		} catch (e) {
-			diffError = String(e);
-		} finally {
-			diffLoading = false;
-		}
-	}
 
 	// ── chat view ─────────────────────────────────────────────────────────────────
 	type Source = { kind: string; label: string; similarity: number | null; };
@@ -320,15 +223,11 @@
 		selectedView = v;
 		if (v === 'sessions' && !sessionsLoaded) loadSessions();
 		if (v === 'agency'   && !agencyLoaded)   loadAgency();
-		if (v === 'chapters' && !chaptersLoaded) loadChapters();
-		if (v === 'diff') { loadDiffChapters(); loadChatModels(); }
 		if (v === 'chat') loadChatModels();
 	}
 
 
 	import { fmtDate } from '$lib/fmt';
-
-	function pct(n: number | null) { return n != null ? `${(n * 100).toFixed(0)}%` : '—'; }
 </script>
 
 <svelte:head><title>Echo</title></svelte:head>
@@ -344,14 +243,8 @@
 			<button class:active={selectedView === 'agency'} onclick={() => switchView('agency')}>
 				Agency Map
 			</button>
-			<button class:active={selectedView === 'chapters'} onclick={() => switchView('chapters')}>
-				Chapters
-			</button>
 			<button class:active={selectedView === 'search'} onclick={() => switchView('search')}>
 				Search
-			</button>
-			<button class:active={selectedView === 'diff'} onclick={() => switchView('diff')}>
-				Psyche Diff
 			</button>
 			<button class:active={selectedView === 'chat'} onclick={() => switchView('chat')}>
 				Ask Echo
@@ -531,67 +424,6 @@
 		</section>
 	{/if}
 
-	<!-- ── Diff view ─────────────────────────────────────────────────── -->
-	{#if selectedView === 'diff'}
-		<section>
-			<div class="view-header">
-				<h2>Psyche Diff</h2>
-				<span class="dim" style="font-size:0.75rem">Who were you then vs who were you later?</span>
-			</div>
-
-			<div class="diff-controls">
-				<select class="diff-select" bind:value={diffSelA} onchange={() => diffResult = null}>
-					{#each diffChapters as ch}
-						<option value={ch.id}>Ch {ch.id} — {ch.label} ({fmtDate(ch.start_at)})</option>
-					{/each}
-				</select>
-				<span class="vs">vs</span>
-				<select class="diff-select" bind:value={diffSelB} onchange={() => diffResult = null}>
-					{#each diffChapters as ch}
-						<option value={ch.id}>Ch {ch.id} — {ch.label} ({fmtDate(ch.start_at)})</option>
-					{/each}
-				</select>
-				<select class="search-select" bind:value={diffModel}>
-					<option value="auto">Auto (Claude preferred)</option>
-					{#if availableModels.includes('claude')}
-						<option value="claude">Claude Sonnet 4.6</option>
-					{/if}
-					{#if availableModels.includes('gpt4o')}
-						<option value="gpt4o">GPT-4o</option>
-					{/if}
-				</select>
-				<button
-					class="diff-btn"
-					onclick={() => runDiff(false)}
-					disabled={diffLoading || diffSelA === diffSelB}
-				>
-					{diffLoading ? 'Thinking…' : 'Compare'}
-				</button>
-				{#if diffResult?.cached}
-					<button class="diff-btn-ghost" onclick={() => runDiff(true)} disabled={diffLoading}>
-						Regenerate
-					</button>
-				{/if}
-			</div>
-
-			{#if diffSelA === diffSelB}
-				<p class="status">Choose two different chapters.</p>
-			{:else if diffLoading}
-				<p class="status">Calling GPT-4o… this takes ~5 seconds.</p>
-			{:else if diffError}
-				<p class="error">{diffError}</p>
-			{:else if diffResult}
-				<DiffView
-					a={diffResult.chapter_a_data}
-					b={diffResult.chapter_b_data}
-					narrative={diffResult.narrative}
-					model={diffResult.model}
-					cached={diffResult.cached}
-				/>
-			{/if}
-		</section>
-	{/if}
-
 	<!-- ── Chat view ─────────────────────────────────────────────────── -->
 	{#if selectedView === 'chat'}
 		<section class="chat-section">
@@ -706,60 +538,6 @@
 		</section>
 	{/if}
 
-	<!-- ── Chapters view ──────────────────────────────────────────────── -->
-	{#if selectedView === 'chapters'}
-		<section>
-			<div class="view-header">
-				<h2>Chapters</h2>
-				{#if chaptersLoaded}
-					<span class="count">{chapters.length} chapters</span>
-				{/if}
-			</div>
-
-			{#if chaptersLoading}
-				<p class="status">Loading…</p>
-			{:else if chaptersError}
-				<p class="error">{chaptersError}</p>
-			{:else}
-				<div class="chapter-grid">
-					{#each chapters as ch}
-						<div
-							class="chapter-card"
-							class:expanded={expandedChapter === ch.id}
-							onclick={() => expandedChapter = expandedChapter === ch.id ? null : ch.id}
-							role="button"
-							tabindex="0"
-							onkeydown={e => e.key === 'Enter' && (expandedChapter = expandedChapter === ch.id ? null : ch.id)}
-						>
-							<div class="ch-header">
-								<span class="ch-num">Ch {ch.id}</span>
-								<span class="ch-label">{ch.label}</span>
-							</div>
-							<p class="ch-dates">{fmtDate(ch.start_at)} – {fmtDate(ch.end_at)}</p>
-
-							<div class="ch-stats">
-								<span title="Night watch ratio">🌙 {pct(ch.night_ratio)}</span>
-								<span title="Peak hour IST">⏰ {ch.modal_hour ?? '—'}h</span>
-								<span title="Long-form ratio">📺 {pct(ch.long_form_ratio)}</span>
-							</div>
-
-							{#if ch.top_categories && Object.keys(ch.top_categories).length > 0}
-								<div class="ch-cats">
-									{#each Object.entries(ch.top_categories).slice(0, 3) as [cat]}
-										<span class="cat-tag">{cat}</span>
-									{/each}
-								</div>
-							{/if}
-
-							{#if expandedChapter === ch.id && ch.reflection}
-								<p class="ch-reflection">{ch.reflection}</p>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</section>
-	{/if}
 </div>
 
 <style>
@@ -1045,33 +823,6 @@
 	.search-btn:hover:not(:disabled) { background: #4338ca; }
 	.search-btn:disabled { opacity: 0.5; cursor: default; }
 
-	.diff-controls {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 1.25rem;
-		flex-wrap: wrap;
-	}
-
-	.diff-select {
-		flex: 1;
-		min-width: 180px;
-		background: #111827;
-		border: 1px solid #374151;
-		color: #d1d5db;
-		padding: 0.45rem 0.6rem;
-		border-radius: 6px;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.vs {
-		font-size: 0.75rem;
-		color: #4b5563;
-		font-weight: 600;
-		flex-shrink: 0;
-	}
-
 	.diff-btn {
 		background: #4f46e5;
 		border: none;
@@ -1270,45 +1021,4 @@
 	.chat-textarea:disabled { opacity: 0.5; }
 	.chat-textarea::placeholder { color: #374151; }
 
-	.chapter-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-		gap: 0.75rem;
-	}
-
-	.chapter-card {
-		background: #0d1117;
-		border: 1px solid #1f2937;
-		border-radius: 8px;
-		padding: 0.85rem;
-		cursor: pointer;
-		transition: border-color 0.15s, background 0.15s;
-	}
-	.chapter-card:hover { border-color: #374151; background: #111827; }
-	.chapter-card.expanded { border-color: #4f46e5; }
-
-	.ch-header { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
-	.ch-num { font-size: 0.65rem; color: #6b7280; font-weight: 600; }
-	.ch-label { font-size: 0.85rem; font-weight: 600; color: #e5e7eb; }
-	.ch-dates { margin: 0 0 0.5rem; font-size: 0.7rem; color: #6b7280; }
-
-	.ch-stats { display: flex; gap: 0.75rem; font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.5rem; }
-
-	.ch-cats { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
-	.cat-tag {
-		font-size: 0.65rem;
-		padding: 1px 6px;
-		border-radius: 3px;
-		background: #1f2937;
-		color: #9ca3af;
-	}
-
-	.ch-reflection {
-		margin: 0.75rem 0 0;
-		font-size: 0.78rem;
-		line-height: 1.55;
-		color: #d1d5db;
-		border-top: 1px solid #1f2937;
-		padding-top: 0.75rem;
-	}
 </style>
