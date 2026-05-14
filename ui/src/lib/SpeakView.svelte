@@ -50,6 +50,8 @@
 	let hitLimit     = $state(false);
 	let done         = $state(false);
 	let error        = $state('');
+	let traceId      = $state('');
+	let scoreGiven   = $state<number | null>(null);
 
 	function reset() {
 		rounds = [];
@@ -60,6 +62,8 @@
 		hitLimit = false;
 		modelLabel = '';
 		error = '';
+		traceId = '';
+		scoreGiven = null;
 	}
 
 	function currentRound(): Round | undefined {
@@ -112,6 +116,7 @@
 			sideInsights = (evt.side_insights as string[]) ?? [];
 			modelLabel   = evt.model as string ?? '';
 			hitLimit     = evt.hit_round_limit as boolean ?? false;
+			traceId      = (evt.trace_id as string) ?? '';
 			// Mark last round done
 			rounds = rounds.map((r, i) => i === rounds.length - 1 ? { ...r, done: true, collapsed: true } : r);
 			done = true;
@@ -119,6 +124,18 @@
 			error = (evt.message as string) ?? 'Unknown error';
 			done = true;
 		}
+	}
+
+	async function postScore(value: number) {
+		if (!traceId || scoreGiven !== null) return;
+		scoreGiven = value;
+		try {
+			await fetch('/api/speak/score', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ trace_id: traceId, value }),
+			});
+		} catch { /* score is best-effort */ }
 	}
 
 	async function runSpeak() {
@@ -307,6 +324,18 @@
 							{/each}
 						</ul>
 					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if traceId}
+			<div class="score-bar">
+				{#if scoreGiven === null}
+					<span class="score-label">Was this surprising?</span>
+					<button class="score-btn score-yes" onclick={() => postScore(1)}>Yes, surprising</button>
+					<button class="score-btn score-no"  onclick={() => postScore(0)}>Expected</button>
+				{:else}
+					<span class="score-logged">{scoreGiven === 1 ? 'Marked surprising' : 'Marked expected'} — logged to Langfuse</span>
 				{/if}
 			</div>
 		{/if}
@@ -610,4 +639,46 @@
 	}
 
 	.dim { color: #6b7280; }
+
+	/* ── Score bar ── */
+	.score-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.6rem 1rem;
+		border: 1px solid #1f2937;
+		border-radius: 6px;
+		background: #0d1117;
+	}
+	.score-label {
+		font-size: 0.72rem;
+		color: #6b7280;
+		margin-right: auto;
+	}
+	.score-btn {
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 0.3rem 0.8rem;
+		border-radius: 4px;
+		border: 1px solid;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+	.score-yes {
+		background: none;
+		border-color: #22c55e;
+		color: #22c55e;
+	}
+	.score-yes:hover { background: #22c55e; color: #0d1117; }
+	.score-no {
+		background: none;
+		border-color: #4b5563;
+		color: #6b7280;
+	}
+	.score-no:hover { background: #1f2937; color: #9ca3af; }
+	.score-logged {
+		font-size: 0.72rem;
+		color: #4b5563;
+		font-style: italic;
+	}
 </style>

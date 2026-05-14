@@ -27,11 +27,14 @@ class _NoopTrace:
     def generation(self, *_, **__): return _NoopSpan()
     def tool(self, *_, **__):       return _NoopSpan()
     def finish(self, *_, **__):     pass
+    @property
+    def trace_id(self) -> str:      return ""
 
 
 class _NoopLangfuse:
-    def trace(self, **__):  return _NoopTrace()
-    def flush(self):        pass
+    def trace(self, **__):                         return _NoopTrace()
+    def score(self, *_, **__):                     pass
+    def flush(self):                               pass
 
 
 # ── Live wrappers ──────────────────────────────────────────────────────────────
@@ -97,6 +100,13 @@ class _LiveTrace:
         except Exception:
             pass
 
+    @property
+    def trace_id(self) -> str:
+        try:
+            return str(self._root.trace_id)
+        except Exception:
+            return ""
+
 
 class _LiveLangfuse:
     def __init__(self, client):
@@ -112,6 +122,12 @@ class _LiveLangfuse:
             return _LiveTrace(root)
         except Exception:
             return _NoopTrace()  # type: ignore
+
+    def score(self, trace_id: str, name: str, value: float) -> None:
+        try:
+            self._client.score(trace_id=trace_id, name=name, value=value)
+        except Exception:
+            pass
 
     def flush(self):
         try:

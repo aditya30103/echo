@@ -412,6 +412,7 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 raw_findings  = args.get("findings", [])
                 side_insights = [str(s) for s in args.get("side_insights", [])]
                 findings      = _validate_findings(raw_findings)
+                trace.finish(len(findings), round_n, hit_limit=False)
                 finish_evt = {
                     "type": "finish",
                     "findings": [f.model_dump() for f in findings],
@@ -419,8 +420,8 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     "rounds_used": round_n,
                     "model": model_label,
                     "hit_round_limit": False,
+                    "trace_id": trace.trace_id,
                 }
-                trace.finish(len(findings), round_n, hit_limit=False)
                 yield finish_evt
                 return
 
@@ -438,6 +439,7 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             })
 
         # Hit round limit
+        trace.finish(0, req.max_rounds, hit_limit=True)
         limit_evt = {
             "type": "finish",
             "findings": [],
@@ -445,8 +447,8 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             "rounds_used": req.max_rounds,
             "model": model_label,
             "hit_round_limit": True,
+            "trace_id": trace.trace_id,
         }
-        trace.finish(0, req.max_rounds, hit_limit=True)
         yield limit_evt
 
     finally:
@@ -496,6 +498,20 @@ def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
         model=model_label,
         hit_round_limit=hit_limit,
     )
+
+
+class ScoreRequest(BaseModel):
+    trace_id: str
+    value: float  # 1.0 = surprising / useful, 0.0 = expected / not useful
+
+
+@router.post("/score")
+def score_run(req: ScoreRequest):
+    """Post a 'surprising' score to the Langfuse trace for a completed run."""
+    lf = get_langfuse()
+    lf.score(req.trace_id, "surprising", req.value)
+    lf.flush()
+    return {"ok": True}
 
 
 @router.post("/stream")
