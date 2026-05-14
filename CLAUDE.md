@@ -145,8 +145,15 @@ vector_search, run_pelt, run_clustering, youtube_lookup, web_search (5 calls/ses
 **Observability:** Langfuse tracing per session. Per-finding human evals via score buttons
 (✓ Correct / ~ Partial / ✗ Wrong) → `finding_N` scores on the Langfuse trace.
 
-**Prompt caching:** Anthropic `cache_control: ephemeral` on stable preamble (Block 1).
-Phase-dependent instructions are Block 2 (uncached). ~40–60% input token reduction after round 1.
+**Prompt caching:** Two cache checkpoints on the Anthropic native path.
+- Block 1 (`cached_prefix`: schema + rubric + stats) — stable across all rounds → cache hit from round 2.
+- Block 2 (instructions: phase rules + tools) — stable within each phase → cache hit from round 2.
+  At the Phase 1→2 boundary, Block 2 content changes (tool list expands). That round pays the 1.25×
+  write rate for Block 2 once; all subsequent Phase 2 rounds hit the cache at 0.10×. This is expected
+  behavior, not a bug — Anthropic's cache never serves stale content on a miss.
+Note: an earlier engineering review (Sprint 5 /plan-eng-review Codex subagent) struck down Block 2
+caching, incorrectly treating the Phase 2 miss as a cache invalidation risk. Block 2 caching was
+restored after confirming Anthropic's miss-is-a-write semantics.
 
 **Docker:** `docker compose up` starts api:8000 + ui:5173. echo.db + .env mounted read-only.
 
