@@ -7,16 +7,22 @@
 		'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
 	};
 
-	let { totalInputTokens, totalOutputTokens, model, primaryFindingCount }: {
+	let { totalInputTokens, totalOutputTokens, totalCacheReadTokens = 0, model, primaryFindingCount }: {
 		totalInputTokens: number;
 		totalOutputTokens: number;
+		totalCacheReadTokens?: number;
 		model: string;
 		primaryFindingCount: number;
 	} = $props();
 
+	const inRate  = RATES[model]?.in  ?? 3.00;
+	const outRate = RATES[model]?.out ?? 15.00;
+
+	// Cache reads are billed at 10% of base input rate (Anthropic pricing).
 	let cost = $derived(
-		(totalInputTokens  / 1_000_000) * (RATES[model]?.in  ?? 3.00) +
-		(totalOutputTokens / 1_000_000) * (RATES[model]?.out ?? 15.00)
+		((totalInputTokens - totalCacheReadTokens) / 1_000_000) * inRate +
+		(totalCacheReadTokens                      / 1_000_000) * inRate * 0.10 +
+		(totalOutputTokens                         / 1_000_000) * outRate
 	);
 
 	let costPerFinding = $derived(
@@ -30,6 +36,10 @@
 	<span>{totalInputTokens.toLocaleString()} in</span>
 	<span class="sep">·</span>
 	<span>{totalOutputTokens.toLocaleString()} out</span>
+	{#if totalCacheReadTokens > 0}
+		<span class="sep">·</span>
+		<span class="cache-hit">{totalCacheReadTokens.toLocaleString()} cached</span>
+	{/if}
 	<span class="sep">·</span>
 	<span class="dollars">${cost.toFixed(4)}</span>
 	{#if costPerFinding > 0}
@@ -54,4 +64,5 @@
 
 	.sep { color: #374151; }
 	.dollars { color: #6b7280; }
+	.cache-hit { color: #3b82f6; }
 </style>

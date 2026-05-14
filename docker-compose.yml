@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./echo.db:/app/echo.db:ro
+      - ./.env:/app/.env:ro
+    environment:
+      - UNSAFE_PYTHON_SANDBOX=false
+
+  ui:
+    build: ./ui
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    environment:
+      - VITE_API_URL=http://api:8000

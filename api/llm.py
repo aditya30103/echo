@@ -42,17 +42,42 @@ def available_models() -> list[str]:
     return models or []
 
 
+def _inject_prefix(messages: list[dict], cached_prefix: str) -> list[dict]:
+    """Prepend cached_prefix to the first system message for non-Anthropic paths.
+
+    Anthropic handles prefix caching natively via two system blocks.
+    All other providers receive the preamble concatenated into the system message.
+    """
+    result = []
+    injected = False
+    for m in messages:
+        if m["role"] == "system" and not injected:
+            result.append({"role": "system", "content": cached_prefix + "\n" + m["content"]})
+            injected = True
+        else:
+            result.append(m)
+    if not injected:
+        result = [{"role": "system", "content": cached_prefix}] + result
+    return result
+
+
 def chat(
-    messages: list[dict],  # [{"role": "user"|"assistant"|"system", "content": str}]
-    model: str = "auto",   # "auto" | "claude" | "gpt4o"
+    messages: list[dict],          # [{"role": "user"|"assistant"|"system", "content": str}]
+    model: str = "auto",           # "auto" | "claude" | "gpt4o"
     max_tokens: int = 1024,
     temperature: float = 0.7,
+    cached_prefix: str | None = None,  # stable preamble to cache on Anthropic path
 ) -> tuple[str, str, dict, str]:
     """Call an LLM and return (text, model_label, usage, stop_reason).
 
-    usage = {"input_tokens": int, "output_tokens": int}
+    usage = {"input_tokens": int, "output_tokens": int,
+             "cache_read_input_tokens": int, "cache_creation_input_tokens": int}
     stop_reason = "end_turn" | "max_tokens" | "stop" | "length" | "unknown"
     model="auto" → prefers Claude if ANTHROPIC_API_KEY is set, else GPT-4o.
+
+    cached_prefix: when provided on the Anthropic native path, the prefix is sent
+    as Block 1 with cache_control=ephemeral and the system message as Block 2.
+    On all other paths the prefix is prepended to the system message text.
     """
     _load_env()
 
@@ -69,56 +94,77 @@ def chat(
         client = _anthropic.Anthropic(api_key=anthropic_key)
         system_msgs = [m["content"] for m in messages if m["role"] == "system"]
         user_msgs   = [m for m in messages if m["role"] != "system"]
+
+        if cached_prefix is not None and system_msgs:
+            # Two-block system: Block 1 (stable preamble, cached) + Block 2 (instructions)
+            system_param: str | list = [
+                {"type": "text", "text": cached_prefix, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": system_msgs[0]},
+            ]
+        else:
+            system_param = system_msgs[0] if system_msgs else ""
+
         resp = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
-            system=system_msgs[0] if system_msgs else "",
+            system=system_param,
             messages=user_msgs,
             timeout=60,
         )
-        usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
+        usage = {
+            "input_tokens":                resp.usage.input_tokens,
+            "output_tokens":               resp.usage.output_tokens,
+            "cache_read_input_tokens":     getattr(resp.usage, "cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": getattr(resp.usage, "cache_creation_input_tokens", 0),
+        }
         return resp.content[0].text.strip(), "claude-sonnet-4-6", usage, str(resp.stop_reason or "unknown")
 
     # ── Claude via OpenRouter ────────────────────────────────────────────
     if want_claude and or_key and not want_gpt4o:
         import openai
         client = openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1")
+        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
         resp = client.chat.completions.create(
             model=f"anthropic/{CLAUDE_MODEL}",
-            messages=messages,
+            messages=msgs,
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=60,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
+        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
+                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         return resp.choices[0].message.content.strip(), "claude-sonnet-4-6 (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o direct ───────────────────────────────────────────────────
     if openai_key:
         import openai
         client = openai.OpenAI(api_key=openai_key)
+        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
         resp = client.chat.completions.create(
             model=GPT4O_DIRECT,
-            messages=messages,
+            messages=msgs,
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=60,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
+        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
+                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         return resp.choices[0].message.content.strip(), "gpt-4o", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o via OpenRouter ────────────────────────────────────────────
     if or_key:
         import openai
         client = openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1")
+        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
         resp = client.chat.completions.create(
             model=GPT4O_MODEL,
-            messages=messages,
+            messages=msgs,
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=60,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
+        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
+                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         return resp.choices[0].message.content.strip(), "gpt-4o (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     raise RuntimeError(

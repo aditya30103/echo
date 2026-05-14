@@ -7,7 +7,7 @@ from typing import Iterator
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import sqlite_utils
 
 from api.db import get_db
@@ -192,6 +192,7 @@ class SpeakResponse(BaseModel):
     hit_round_limit: bool
     total_input_tokens: int = 0
     total_output_tokens: int = 0
+    total_cache_read_tokens: int = 0
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -399,9 +400,10 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
         session_state: dict = {}
         # Tool call log: f"{tool}:{json_args}" per call — used for efficiency metric.
         _tool_calls: list[str] = []
-        # Token accumulation for burn-rate metric.
-        _total_input_tokens  = 0
-        _total_output_tokens = 0
+        # Token accumulation for burn-rate metric and cost display.
+        _total_input_tokens       = 0
+        _total_output_tokens      = 0
+        _total_cache_read_tokens  = 0
 
         for round_n in range(1, req.max_rounds + 1):
             phase = 1 if round_n <= req.narrative_blind_rounds else 2
@@ -435,9 +437,10 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 phase_2_start=str(req.narrative_blind_rounds + 1),
                 tools=tool_descriptions(phase == 1),
             )
-            system_content = preamble + "\n" + instructions
+            # preamble is passed as cached_prefix — stable across rounds on Anthropic path.
+            # instructions change at Phase 2 (tool list differs) so they stay uncached.
             messages = (
-                [{"role": "system", "content": system_content}]
+                [{"role": "system", "content": instructions}]
                 + _trim_history(history, _KEEP_FULL_ROUNDS)
             )
 
@@ -446,9 +449,11 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             try:
                 raw_response, model_label, usage, stop_reason = llm_chat(
                     messages, model=req.model, max_tokens=2000, temperature=0.3,
+                    cached_prefix=preamble,
                 )
-                _total_input_tokens  += usage.get("input_tokens", 0)
-                _total_output_tokens += usage.get("output_tokens", 0)
+                _total_input_tokens      += usage.get("input_tokens", 0)
+                _total_output_tokens     += usage.get("output_tokens", 0)
+                _total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
                 llm_gen.done(raw_response[:500], usage=usage, model=model_label)
                 # Langfuse: flag truncated rounds immediately.
                 if stop_reason in ("max_tokens", "length"):
@@ -503,6 +508,7 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     "trace_id": trace.trace_id,
                     "total_input_tokens": _total_input_tokens,
                     "total_output_tokens": _total_output_tokens,
+                    "total_cache_read_tokens": _total_cache_read_tokens,
                 }
                 yield finish_evt
                 return
@@ -536,6 +542,9 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             "model": model_label,
             "hit_round_limit": True,
             "trace_id": trace.trace_id,
+            "total_input_tokens": _total_input_tokens,
+            "total_output_tokens": _total_output_tokens,
+            "total_cache_read_tokens": _total_cache_read_tokens,
         }
         yield limit_evt
 
@@ -548,14 +557,15 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
 @router.post("", response_model=SpeakResponse)
 def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
     """Non-streaming JSON endpoint (curl / testing)."""
-    trace_entries:       list[TraceEntry] = []
-    findings:            list[Finding]    = []
-    side_insights:       list[str]        = []
-    model_label          = req.model
-    hit_limit            = False
-    total_input_tokens   = 0
-    total_output_tokens  = 0
-    pending: dict        = {}
+    trace_entries:          list[TraceEntry] = []
+    findings:               list[Finding]    = []
+    side_insights:          list[str]        = []
+    model_label             = req.model
+    hit_limit               = False
+    total_input_tokens      = 0
+    total_output_tokens     = 0
+    total_cache_read_tokens = 0
+    pending: dict           = {}
 
     for evt in _react_loop(req, db):
         t = evt["type"]
@@ -574,12 +584,13 @@ def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
                 pending["observation"] = "[Agent finished]"
                 if pending.get("round"):
                     trace_entries.append(TraceEntry(**pending))
-            findings             = [Finding(**f) for f in evt.get("findings", [])]
-            side_insights        = evt.get("side_insights", [])
-            model_label          = evt.get("model", req.model)
-            hit_limit            = evt.get("hit_round_limit", False)
-            total_input_tokens   = evt.get("total_input_tokens", 0)
-            total_output_tokens  = evt.get("total_output_tokens", 0)
+            findings                = [Finding(**f) for f in evt.get("findings", [])]
+            side_insights           = evt.get("side_insights", [])
+            model_label             = evt.get("model", req.model)
+            hit_limit               = evt.get("hit_round_limit", False)
+            total_input_tokens      = evt.get("total_input_tokens", 0)
+            total_output_tokens     = evt.get("total_output_tokens", 0)
+            total_cache_read_tokens = evt.get("total_cache_read_tokens", 0)
 
     return SpeakResponse(
         query=req.query,
@@ -591,6 +602,7 @@ def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
         hit_round_limit=hit_limit,
         total_input_tokens=total_input_tokens,
         total_output_tokens=total_output_tokens,
+        total_cache_read_tokens=total_cache_read_tokens,
     )
 
 
@@ -604,6 +616,29 @@ def score_run(req: ScoreRequest):
     """Post a 'surprising' score to the Langfuse trace for a completed run."""
     lf = get_langfuse()
     lf.score(req.trace_id, "surprising", req.value)
+    lf.flush()
+    return {"ok": True}
+
+
+class FindingScoreRequest(BaseModel):
+    trace_id: str
+    finding_index: int
+    # finding_index: 0-based position among primary (non-side-insight) findings only.
+    # Langfuse score key: finding_0, finding_1, … — no gaps, side insights excluded.
+    value: float = Field(ge=0.0, le=1.0)  # 1.0=Correct, 0.5=Partial, 0.0=Wrong
+    correction: str = ""
+
+
+@router.post("/score-finding")
+def score_finding(req: FindingScoreRequest):
+    """Post a per-finding accuracy score to the Langfuse trace."""
+    lf = get_langfuse()
+    lf.score(
+        req.trace_id,
+        f"finding_{req.finding_index}",
+        req.value,
+        comment=req.correction or None,
+    )
     lf.flush()
     return {"ok": True}
 

@@ -44,6 +44,13 @@
 		low:    '#ef4444',
 	};
 
+	type FindingEval = {
+		score: number | null;
+		correctionOpen: boolean;
+		correction: string;
+		submitted: boolean;
+	};
+
 	let query        = $state('');
 	let maxRounds    = $state(20);
 	let running      = $state(false);
@@ -56,11 +63,13 @@
 	let done         = $state(false);
 	let error        = $state('');
 	let traceId      = $state('');
-	let scoreGiven        = $state<number | null>(null);
-	let totalInputTokens  = $state(0);
-	let totalOutputTokens = $state(0);
-	let expandedFindings  = $state<Set<number>>(new Set());
-	let autoScrollPaused  = $state(false);
+	let scoreGiven          = $state<number | null>(null);
+	let totalInputTokens    = $state(0);
+	let totalOutputTokens   = $state(0);
+	let totalCacheReadTokens = $state(0);
+	let expandedFindings    = $state<Set<number>>(new Set());
+	let autoScrollPaused    = $state(false);
+	let findingScores       = $state<Record<number, FindingEval>>({});
 
 	function reset() {
 		rounds = [];
@@ -75,8 +84,10 @@
 		scoreGiven = null;
 		totalInputTokens = 0;
 		totalOutputTokens = 0;
+		totalCacheReadTokens = 0;
 		expandedFindings = new Set();
 		autoScrollPaused = false;
+		findingScores = {};
 	}
 
 	function currentRound(): Round | undefined {
@@ -125,13 +136,14 @@
 		} else if (type === 'phase_change') {
 			// Visual separator handled via phase field on round_start
 		} else if (type === 'finish') {
-			findings          = (evt.findings as Finding[]) ?? [];
-			sideInsights      = (evt.side_insights as string[]) ?? [];
-			modelLabel        = (evt.model as string) ?? '';
-			hitLimit          = (evt.hit_round_limit as boolean) ?? false;
-			traceId           = (evt.trace_id as string) ?? '';
-			totalInputTokens  = (evt.total_input_tokens as number) ?? 0;
-			totalOutputTokens = (evt.total_output_tokens as number) ?? 0;
+			findings             = (evt.findings as Finding[]) ?? [];
+			sideInsights         = (evt.side_insights as string[]) ?? [];
+			modelLabel           = (evt.model as string) ?? '';
+			hitLimit             = (evt.hit_round_limit as boolean) ?? false;
+			traceId              = (evt.trace_id as string) ?? '';
+			totalInputTokens     = (evt.total_input_tokens as number) ?? 0;
+			totalOutputTokens    = (evt.total_output_tokens as number) ?? 0;
+			totalCacheReadTokens = (evt.total_cache_read_tokens as number) ?? 0;
 			rounds = rounds.map((r, i) => i === rounds.length - 1 ? { ...r, done: true, collapsed: true } : r);
 			done = true;
 		} else if (type === 'error') {
@@ -148,6 +160,24 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ trace_id: traceId, value }),
+			});
+		} catch { /* score is best-effort */ }
+	}
+
+	function openCorrection(idx: number, score: number) {
+		findingScores[idx] = { score, correctionOpen: true, correction: '', submitted: false };
+	}
+
+	async function submitFindingScore(idx: number, score: number | null) {
+		if (score === null) return;
+		const tid        = traceId; // capture before any await
+		const correction = findingScores[idx]?.correction ?? '';
+		findingScores[idx] = { score, correctionOpen: false, correction, submitted: true };
+		try {
+			await fetch('/api/speak/score-finding', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ trace_id: tid, finding_index: idx, value: score, correction }),
 			});
 		} catch { /* score is best-effort */ }
 	}
@@ -339,20 +369,46 @@
 				</div>
 				<ol class="findings-list">
 					{#each primaryFindings as f, i}
-						<li class="finding finding-accordion" onclick={() => toggleFinding(i)}>
-							<div class="finding-meta">
-								<span class="finding-tag" style="color:{TAG_COLOR[f.source_tag] ?? '#6b7280'}">[{f.source_tag}]</span>
-								<span class="finding-conf" style="color:{CONF_COLOR[f.confidence] ?? '#6b7280'}">{f.confidence}</span>
-								{#if f.narrative_derived}
-									<span class="finding-warn">narrative-derived</span>
-								{/if}
-								{#if f.evidence}
-									<span class="finding-toggle">{expandedFindings.has(i) ? '∨' : '›'}</span>
+						<li class="finding-item">
+							<div class="finding finding-accordion" onclick={() => toggleFinding(i)}>
+								<div class="finding-meta">
+									<span class="finding-tag" style="color:{TAG_COLOR[f.source_tag] ?? '#6b7280'}">[{f.source_tag}]</span>
+									<span class="finding-conf" style="color:{CONF_COLOR[f.confidence] ?? '#6b7280'}">{f.confidence}</span>
+									{#if f.narrative_derived}
+										<span class="finding-warn">narrative-derived</span>
+									{/if}
+									{#if f.evidence}
+										<span class="finding-toggle">{expandedFindings.has(i) ? '∨' : '›'}</span>
+									{/if}
+								</div>
+								<p class="finding-claim">{f.claim}</p>
+								{#if expandedFindings.has(i) && f.evidence}
+									<p class="finding-evidence">{f.evidence}</p>
 								{/if}
 							</div>
-							<p class="finding-claim">{f.claim}</p>
-							{#if expandedFindings.has(i) && f.evidence}
-								<p class="finding-evidence">{f.evidence}</p>
+							{#if done && traceId}
+								<div class="finding-eval-row">
+									{#if findingScores[i]?.submitted}
+										<span class="fev-submitted">✓ Submitted</span>
+									{:else if findingScores[i]?.correctionOpen}
+										<textarea
+											class="fev-correction"
+											placeholder="What's inaccurate? (optional)"
+											aria-label="Correction for this finding"
+											bind:value={findingScores[i].correction}
+											rows={2}
+										></textarea>
+										<button
+											class="fev-submit-btn"
+											aria-label="Submit correction"
+											onclick={() => submitFindingScore(i, findingScores[i].score)}
+										>Submit correction</button>
+									{:else}
+										<button class="fev-btn fev-correct" onclick={() => submitFindingScore(i, 1.0)}>✓ Correct</button>
+										<button class="fev-btn fev-partial" onclick={() => openCorrection(i, 0.5)}>~ Partial</button>
+										<button class="fev-btn fev-wrong"   onclick={() => openCorrection(i, 0.0)}>✗ Wrong</button>
+									{/if}
+								</div>
 							{/if}
 						</li>
 					{/each}
@@ -399,6 +455,7 @@
 			<CostFooter
 				{totalInputTokens}
 				{totalOutputTokens}
+				{totalCacheReadTokens}
 				model={modelLabel}
 				primaryFindingCount={primaryCount}
 			/>
@@ -626,12 +683,10 @@
 
 	.finding {
 		padding: 0.9rem 1rem;
-		border-bottom: 1px solid #1f2937;
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
 	}
-	.finding:last-child { border-bottom: none; }
 
 	.finding-accordion {
 		cursor: pointer;
@@ -671,6 +726,76 @@
 		font-family: monospace;
 		white-space: pre-wrap;
 		word-break: break-all;
+	}
+
+	/* ── Per-finding eval row ── */
+	.finding-item {
+		border-bottom: 1px solid #1f2937;
+		display: flex;
+		flex-direction: column;
+	}
+	.finding-item:last-child { border-bottom: none; }
+
+	.finding-eval-row {
+		display: flex;
+		align-items: flex-start;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		padding: 0.5rem 1rem;
+		border-top: 1px solid #1f2937;
+		background: #0a0e14;
+	}
+
+	.fev-btn {
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0.25rem 0.65rem;
+		border-radius: 4px;
+		border: 1px solid;
+		cursor: pointer;
+		background: none;
+		transition: background 0.12s, color 0.12s;
+	}
+	.fev-correct { border-color: #22c55e; color: #22c55e; }
+	.fev-correct:hover { background: #22c55e; color: #0d1117; }
+	.fev-partial { border-color: #eab308; color: #eab308; }
+	.fev-partial:hover { background: #eab308; color: #0d1117; }
+	.fev-wrong   { border-color: #ef4444; color: #ef4444; }
+	.fev-wrong:hover   { background: #ef4444; color: #0d1117; }
+
+	.fev-correction {
+		width: 100%;
+		background: #111827;
+		border: 1px solid #374151;
+		border-radius: 6px;
+		color: #e5e7eb;
+		font-size: 0.78rem;
+		line-height: 1.5;
+		padding: 0.4rem 0.6rem;
+		resize: vertical;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+	.fev-correction:focus { outline: 1px solid #4b5563; }
+	.fev-correction::placeholder { color: #4b5563; }
+
+	.fev-submit-btn {
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 0.3rem 0.8rem;
+		border-radius: 4px;
+		border: none;
+		background: #6366f1;
+		color: #fff;
+		cursor: pointer;
+		transition: background 0.12s;
+	}
+	.fev-submit-btn:hover { background: #4f46e5; }
+
+	.fev-submitted {
+		font-size: 0.68rem;
+		color: #4b5563;
+		font-style: italic;
 	}
 
 	.side-insights {

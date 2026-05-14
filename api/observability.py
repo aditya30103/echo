@@ -45,7 +45,7 @@ class _NoopTrace:
 
 class _NoopLangfuse:
     def trace(self, **__):                         return _NoopTrace()
-    def score(self, *_, **__):                     pass
+    def score(self, trace_id: str = "", name: str = "", value: float = 0.0, comment: str | None = None): pass
     def seed_prompt(self, *_, **__):               pass
     def get_prompt(self, name: str, fallback: str) -> _NoopPrompt:
         return _NoopPrompt(fallback)
@@ -141,9 +141,12 @@ class _LiveLangfuse:
         except Exception:
             return _NoopTrace()  # type: ignore
 
-    def score(self, trace_id: str, name: str, value: float) -> None:
+    def score(self, trace_id: str, name: str, value: float, comment: str | None = None) -> None:
         try:
-            self._client.score(trace_id=trace_id, name=name, value=value)
+            kwargs: dict = {"trace_id": trace_id, "name": name, "value": value}
+            if comment is not None:
+                kwargs["comment"] = comment
+            self._client.score(**kwargs)
         except Exception:
             pass
 
