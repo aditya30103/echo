@@ -363,7 +363,14 @@ def _source_tag(observation: str) -> str:
 
 
 def _trim_history(history: list[dict], keep_full: int = _KEEP_FULL_ROUNDS) -> list[dict]:
-    """Compress old observations so context window stays manageable over 20 rounds."""
+    """Compress old rounds so context window stays manageable over long sessions.
+
+    For the _KEEP_FULL_ROUNDS most recent rounds: kept verbatim.
+    For older rounds:
+    - user OBSERVATION messages: first 200 chars + "[... trimmed]"
+    - assistant THOUGHT+ACTION messages: first 120 chars + "[... trimmed]"
+      (old reasoning is noise after 50 rounds; the agent only needs the gist)
+    """
     if len(history) <= keep_full * 2 + 1:
         return history
     cutoff = max(1, len(history) - keep_full * 2)
@@ -372,8 +379,9 @@ def _trim_history(history: list[dict], keep_full: int = _KEEP_FULL_ROUNDS) -> li
         if i == 0 or i >= cutoff:
             result.append(msg)
         elif msg["role"] == "user" and "OBSERVATION" in msg["content"]:
-            short = msg["content"][:200] + " [... trimmed]"
-            result.append({"role": "user", "content": short})
+            result.append({"role": "user", "content": msg["content"][:200] + " [... trimmed]"})
+        elif msg["role"] == "assistant":
+            result.append({"role": "assistant", "content": msg["content"][:120] + " [... trimmed]"})
         else:
             result.append(msg)
     return result

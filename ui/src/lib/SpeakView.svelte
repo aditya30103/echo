@@ -334,7 +334,7 @@
 		<div class="query-controls">
 			<label class="rounds-label">
 				Max rounds
-				<input type="number" min={4} max={20} bind:value={maxRounds} class="rounds-input" />
+				<input type="number" min={4} max={60} bind:value={maxRounds} class="rounds-input" />
 			</label>
 			<button class="run-btn" onclick={runSpeak} disabled={running || !query.trim()}>
 				{running ? 'Investigating…' : 'Investigate'}

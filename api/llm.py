@@ -107,13 +107,16 @@ def chat(
         else:
             system_param = system_msgs[0] if system_msgs else ""
 
-        resp = client.messages.create(
+        # Use streaming to avoid the 60s non-streaming timeout for long outputs.
+        # At round 40-50 the finish call can generate 2000-4000 tokens; streaming
+        # keeps the connection alive as tokens flow — no wall-clock timeout applies.
+        with client.messages.stream(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
             system=system_param,
             messages=user_msgs,
-            timeout=60,
-        )
+        ) as stream:
+            resp = stream.get_final_message()
         usage = {
             "input_tokens":                resp.usage.input_tokens,
             "output_tokens":               resp.usage.output_tokens,
