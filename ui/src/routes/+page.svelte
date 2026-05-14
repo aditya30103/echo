@@ -31,57 +31,80 @@
 	};
 
 	// ── view state ───────────────────────────────────────────────────────────────
-	type View = 'night' | 'month' | 'chapters' | 'search' | 'diff' | 'chat';
-	let selectedView: View = $state('night');
+	type View = 'sessions' | 'agency' | 'chapters' | 'search' | 'diff' | 'chat';
+	let selectedView: View = $state('sessions');
 
-	// ── night view ───────────────────────────────────────────────────────────────
-	let nightItems: WatchItem[] = $state([]);
-	let nightLoading: boolean = $state(false);
-	let nightError: string = $state('');
-	let nightLoaded: boolean = $state(false);
+	// ── binge sessions view ───────────────────────────────────────────────────────
+	type Session = {
+		session_id: number;
+		depth: number;
+		session_start: string;
+		session_end: string;
+		duration_min: number;
+		watch_count: number;
+		top_channel: string;
+		searched_count: number;
+		autoplay_count: number;
+		start_hour: number;
+		is_night: boolean;
+	};
+	let sessions: Session[] = $state([]);
+	let sessionsLoading: boolean = $state(false);
+	let sessionsError: string = $state('');
+	let sessionsLoaded: boolean = $state(false);
 
-	async function loadNight() {
-		if (nightLoaded) return;
-		nightLoading = true;
-		nightError = '';
+	async function loadSessions() {
+		if (sessionsLoaded) return;
+		sessionsLoading = true;
+		sessionsError = '';
 		try {
-			const res = await fetch('/api/timeline/night');
+			const res = await fetch('/api/insights/sessions?limit=50&min_depth=5');
 			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
 			const data = await res.json();
-			nightItems = data.items;
-			nightLoaded = true;
+			sessions = data.sessions;
+			sessionsLoaded = true;
 		} catch (e) {
-			nightError = String(e);
+			sessionsError = String(e);
 		} finally {
-			nightLoading = false;
+			sessionsLoading = false;
 		}
 	}
 
-	// ── month view ───────────────────────────────────────────────────────────────
-	let monthItems: WatchItem[] = $state([]);
-	let monthLoading: boolean = $state(false);
-	let monthError: string = $state('');
-	let selectedMonth: string = $state(new Date().toISOString().slice(0, 7));
-	let monthTotal: number = $state(0);
-	let monthOffset: number = $state(0);
-	const MONTH_LIMIT = 200;
+	// ── agency map view ────────────────────────────────────────────────────────────
+	type AgencyChapter = {
+		chapter_id: number;
+		label: string;
+		start_at: string;
+		end_at: string;
+		total: number;
+		searched: number;
+		bookmarked: number;
+		autoplay: number;
+		rewatch: number;
+		searched_pct: number;
+		bookmarked_pct: number;
+		autoplay_pct: number;
+		rewatch_pct: number;
+	};
+	let agencyData: AgencyChapter[] = $state([]);
+	let agencyLoading: boolean = $state(false);
+	let agencyError: string = $state('');
+	let agencyLoaded: boolean = $state(false);
 
-	async function loadMonth(reset = false) {
-		if (reset) { monthOffset = 0; monthItems = []; }
-		monthLoading = true;
-		monthError = '';
+	async function loadAgency() {
+		if (agencyLoaded) return;
+		agencyLoading = true;
+		agencyError = '';
 		try {
-			const url = `/api/timeline?month=${selectedMonth}&limit=${MONTH_LIMIT}&offset=${monthOffset}`;
-			const res = await fetch(url);
+			const res = await fetch('/api/insights/agency');
 			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
 			const data = await res.json();
-			monthItems = reset ? data.items : [...monthItems, ...data.items];
-			monthTotal = data.total;
-			monthOffset += data.items.length;
+			agencyData = data.chapters;
+			agencyLoaded = true;
 		} catch (e) {
-			monthError = String(e);
+			agencyError = String(e);
 		} finally {
-			monthLoading = false;
+			agencyLoading = false;
 		}
 	}
 
@@ -286,18 +309,17 @@
 	}
 
 	// ── lifecycle ─────────────────────────────────────────────────────────────────
-	onMount(() => loadNight());
+	onMount(() => loadSessions());
 
 	function switchView(v: View) {
 		selectedView = v;
-		if (v === 'night' && !nightLoaded) loadNight();
-		if (v === 'month') loadMonth(true);
+		if (v === 'sessions' && !sessionsLoaded) loadSessions();
+		if (v === 'agency'   && !agencyLoaded)   loadAgency();
 		if (v === 'chapters' && !chaptersLoaded) loadChapters();
 		if (v === 'diff') { loadDiffChapters(); loadChatModels(); }
 		if (v === 'chat') loadChatModels();
 	}
 
-	let maxMonth = $derived(new Date().toISOString().slice(0, 7));
 
 	function fmtDate(d: string) { return d.slice(0, 10); }
 	function pct(n: number | null) { return n != null ? `${(n * 100).toFixed(0)}%` : '—'; }
@@ -310,11 +332,11 @@
 		<h1>Echo</h1>
 		<p class="subtitle">Six years of watching. Who were you?</p>
 		<nav>
-			<button class:active={selectedView === 'night'} onclick={() => switchView('night')}>
-				Night Archaeology
+			<button class:active={selectedView === 'sessions'} onclick={() => switchView('sessions')}>
+				Binge Sessions
 			</button>
-			<button class:active={selectedView === 'month'} onclick={() => switchView('month')}>
-				By Month
+			<button class:active={selectedView === 'agency'} onclick={() => switchView('agency')}>
+				Agency Map
 			</button>
 			<button class:active={selectedView === 'chapters'} onclick={() => switchView('chapters')}>
 				Chapters
@@ -331,64 +353,100 @@
 		</nav>
 	</header>
 
-	<!-- ── Night view ─────────────────────────────────────────────────── -->
-	{#if selectedView === 'night'}
+	<!-- ── Binge Sessions view ────────────────────────────────────────── -->
+	{#if selectedView === 'sessions'}
 		<section>
 			<div class="view-header">
-				<h2>Night Archaeology <span class="dim">11 PM – 4 AM IST</span></h2>
-				{#if nightLoaded}
-					<span class="count">{nightItems.length} watches across 6 years</span>
-				{/if}
+				<h2>Binge Sessions</h2>
+				<span class="dim" style="font-size:0.75rem">Sessions of 5+ consecutive videos (≤30 min gap)</span>
 			</div>
-
-			{#if nightLoading}
+			{#if sessionsLoading}
 				<p class="status">Loading…</p>
-			{:else if nightError}
-				<p class="error">{nightError}</p>
+			{:else if sessionsError}
+				<p class="error">{sessionsError}</p>
 			{:else}
-				<div class="card-list">
-					{#each nightItems as item (item.watch_id)}
-						<TimelineCard {item} />
+				<div class="sessions-list">
+					{#each sessions as s (s.session_id)}
+						<div class="session-card">
+							<div class="session-depth">{s.depth}</div>
+							<div class="session-body">
+								<div class="session-meta">
+									<span class="session-date">{s.session_start.slice(0, 10)}</span>
+									<span class="session-time dim">{s.session_start.slice(11, 16)} – {s.session_end.slice(11, 16)}</span>
+									{#if s.duration_min > 0}
+										<span class="dim">· {s.duration_min} min</span>
+									{/if}
+									{#if s.is_night}
+										<span class="badge badge-night">night</span>
+									{/if}
+								</div>
+								{#if s.top_channel}
+									<p class="session-channel">{s.top_channel}</p>
+								{/if}
+								<div class="session-signals">
+									{#if s.searched_count > 0}
+										<span class="badge badge-searched">{s.searched_count} searched</span>
+									{/if}
+									{#if s.autoplay_count > 0}
+										<span class="badge badge-autoplay">{s.autoplay_count} autoplay</span>
+									{/if}
+								</div>
+							</div>
+						</div>
 					{/each}
 				</div>
 			{/if}
 		</section>
 	{/if}
 
-	<!-- ── Month view ─────────────────────────────────────────────────── -->
-	{#if selectedView === 'month'}
+	<!-- ── Agency Map view ────────────────────────────────────────────── -->
+	{#if selectedView === 'agency'}
 		<section>
 			<div class="view-header">
-				<h2>Month View</h2>
-				<div class="month-controls">
-					<input
-						type="month"
-						bind:value={selectedMonth}
-						min="2019-12"
-						max={maxMonth}
-						onchange={() => loadMonth(true)}
-					/>
-					{#if monthTotal > 0}
-						<span class="count">{monthTotal} watches</span>
-					{/if}
-				</div>
+				<h2>Agency Map</h2>
+				<span class="dim" style="font-size:0.75rem">How you found content — searched vs passive — by chapter</span>
 			</div>
-
-			{#if monthLoading && monthItems.length === 0}
+			{#if agencyLoading}
 				<p class="status">Loading…</p>
-			{:else if monthError}
-				<p class="error">{monthError}</p>
+			{:else if agencyError}
+				<p class="error">{agencyError}</p>
 			{:else}
-				<div class="card-list">
-					{#each monthItems as item (item.watch_id)}
-						<TimelineCard {item} />
+				<div class="agency-table">
+					<div class="agency-header">
+						<span>Chapter</span>
+						<span>Watches</span>
+						<span title="Actively searched for">Searched</span>
+						<span title="Saved to Watch Later">Bookmarked</span>
+						<span title="Same-channel autoplay">Autoplay</span>
+						<span title="Watched before">Rewatch</span>
+					</div>
+					{#each agencyData as ch (ch.chapter_id)}
+						<div class="agency-row">
+							<div class="agency-chapter">
+								<span class="agency-ch-num">Ch {ch.chapter_id}</span>
+								<span class="agency-ch-label dim">{ch.label}</span>
+								<span class="agency-ch-date dim">{ch.start_at.slice(0, 7)}</span>
+							</div>
+							<span class="agency-total">{ch.total.toLocaleString()}</span>
+							<div class="agency-bar-cell">
+								<div class="agency-bar" style="width:{Math.min(ch.searched_pct, 100)}%; background:#3b82f6"></div>
+								<span class="agency-pct">{ch.searched_pct}%</span>
+							</div>
+							<div class="agency-bar-cell">
+								<div class="agency-bar" style="width:{Math.min(ch.bookmarked_pct, 100)}%; background:#8b5cf6"></div>
+								<span class="agency-pct">{ch.bookmarked_pct}%</span>
+							</div>
+							<div class="agency-bar-cell">
+								<div class="agency-bar" style="width:{Math.min(ch.autoplay_pct, 100)}%; background:#6b7280"></div>
+								<span class="agency-pct">{ch.autoplay_pct}%</span>
+							</div>
+							<div class="agency-bar-cell">
+								<div class="agency-bar" style="width:{Math.min(ch.rewatch_pct, 100)}%; background:#f59e0b"></div>
+								<span class="agency-pct">{ch.rewatch_pct}%</span>
+							</div>
+						</div>
 					{/each}
 				</div>
-				{#if monthItems.length < monthTotal}
-					<button class="load-more" onclick={() => loadMonth()} disabled={monthLoading}>
-						{monthLoading ? 'Loading…' : `Load more (${monthTotal - monthItems.length} remaining)`}
-					</button>
-				{/if}
 			{/if}
 		</section>
 	{/if}
@@ -712,14 +770,122 @@
 	.status { color: #6b7280; padding: 2rem; text-align: center; }
 	.error  { color: #f87171; padding: 1rem; }
 
-	.month-controls { display: flex; align-items: center; gap: 0.75rem; }
-	input[type="month"] {
+	/* ── binge sessions ──────────────────────────────────────────────── */
+	.sessions-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+	.session-card {
+		display: flex;
+		gap: 1rem;
+		align-items: flex-start;
+		padding: 0.75rem 1rem;
 		background: #111827;
 		border: 1px solid #1f2937;
-		color: #d1d5db;
-		padding: 0.3rem 0.5rem;
-		border-radius: 5px;
+		border-radius: 8px;
+	}
+
+	.session-depth {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #6366f1;
+		min-width: 2.5rem;
+		text-align: center;
+		line-height: 1;
+		padding-top: 2px;
+	}
+
+	.session-body { flex: 1; min-width: 0; }
+
+	.session-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: center;
+		margin-bottom: 0.25rem;
+		font-size: 0.78rem;
+	}
+
+	.session-date { color: #d1d5db; font-weight: 600; }
+	.session-time { font-size: 0.72rem; }
+
+	.session-channel {
+		margin: 0 0 0.3rem;
+		font-size: 0.82rem;
+		color: #9ca3af;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.session-signals { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+	.badge {
+		display: inline-block;
+		padding: 0.1rem 0.4rem;
+		border-radius: 4px;
+		font-size: 0.68rem;
+		font-weight: 600;
+	}
+	.badge-night    { background: #1e1b4b; color: #a5b4fc; }
+	.badge-searched { background: #1e3a5f; color: #93c5fd; }
+	.badge-autoplay { background: #1f2937; color: #9ca3af; }
+
+	/* ── agency map ──────────────────────────────────────────────────── */
+	.agency-table {
+		border: 1px solid #1f2937;
+		border-radius: 8px;
+		overflow: hidden;
 		font-size: 0.8rem;
+	}
+
+	.agency-header, .agency-row {
+		display: grid;
+		grid-template-columns: 2fr 80px repeat(4, 1fr);
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.6rem 1rem;
+		border-bottom: 1px solid #1f2937;
+	}
+
+	.agency-header {
+		background: #0d1117;
+		color: #6b7280;
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.agency-row:last-child { border-bottom: none; }
+	.agency-row:hover { background: #0d1117; }
+
+	.agency-chapter {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+	.agency-ch-num   { font-weight: 700; color: #e5e7eb; }
+	.agency-ch-label { font-size: 0.72rem; }
+	.agency-ch-date  { font-size: 0.68rem; }
+
+	.agency-total { color: #9ca3af; text-align: right; }
+
+	.agency-bar-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.agency-bar {
+		height: 6px;
+		border-radius: 3px;
+		min-width: 2px;
+		flex-shrink: 0;
+	}
+
+	.agency-pct {
+		color: #d1d5db;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 
 	.load-more {
