@@ -19,6 +19,18 @@ import os
 
 # ── No-op stubs ────────────────────────────────────────────────────────────────
 
+class _NoopPrompt:
+    """Fallback prompt client when Langfuse is unavailable."""
+    def __init__(self, text: str):
+        self._text = text
+
+    def compile(self, **kwargs: str) -> str:
+        result = self._text
+        for k, v in kwargs.items():
+            result = result.replace("{{" + k + "}}", str(v))
+        return result
+
+
 class _NoopSpan:
     def done(self, *_, **__): pass
 
@@ -34,6 +46,9 @@ class _NoopTrace:
 class _NoopLangfuse:
     def trace(self, **__):                         return _NoopTrace()
     def score(self, *_, **__):                     pass
+    def seed_prompt(self, *_, **__):               pass
+    def get_prompt(self, name: str, fallback: str) -> _NoopPrompt:
+        return _NoopPrompt(fallback)
     def flush(self):                               pass
 
 
@@ -128,6 +143,35 @@ class _LiveLangfuse:
             self._client.score(trace_id=trace_id, name=name, value=value)
         except Exception:
             pass
+
+    def seed_prompt(self, name: str, template: str) -> None:
+        """Push the prompt template to Langfuse if it doesn't already exist."""
+        try:
+            self._client.get_prompt(name, fetch_timeout_seconds=3)
+            # Already exists — leave it alone so dashboard edits are preserved
+        except Exception:
+            try:
+                self._client.create_prompt(
+                    name=name,
+                    prompt=template,
+                    labels=["production"],
+                    commit_message="Auto-seeded by Echo Speaks on first startup",
+                )
+                print(f"[observability] Seeded prompt '{name}' to Langfuse")
+            except Exception as e:
+                print(f"[observability] Could not seed prompt '{name}': {e}")
+
+    def get_prompt(self, name: str, fallback: str) -> object:
+        try:
+            return self._client.get_prompt(
+                name,
+                type="text",
+                label="production",
+                fallback=fallback,
+                cache_ttl_seconds=300,   # 5-min cache; dashboard changes land within 5 min
+            )
+        except Exception:
+            return _NoopPrompt(fallback)
 
     def flush(self):
         try:

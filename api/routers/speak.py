@@ -41,6 +41,49 @@ _SCHEMA_TABLES = [
     "calendar_events", "transactions",
 ]
 
+# ── Langfuse-managed instruction template ─────────────────────────────────────
+# This string is seeded to Langfuse Prompt Management on first startup under the
+# name "echo-speaks-instructions" with the "production" label.  Edit it from the
+# Langfuse dashboard to iterate prompt behaviour without touching code.
+# Variables: {{narrative_blind_rounds}}, {{phase_2_start}}, {{tools}}
+
+_INSTRUCTION_TEMPLATE = """\
+## Epistemic hierarchy — CRITICAL
+Observations are tagged by source. Honor these tiers strictly:
+- [RAW-SQL]: direct SQLite result — primary evidence, cite freely
+- [RAW-COMPUTED]: Python/pandas/numpy result — primary evidence, cite freely
+- [SEMANTIC-RAW]: semantic search on raw tables — medium trust
+- [NARRATIVE]: chapter reflections or chapter context — ORIENTATION ONLY.
+  Reflections are LLM-generated, may embed user-provided biographical context.
+  NEVER use [NARRATIVE] as primary evidence for a finding.
+
+## Phase rules
+Rounds 1-{{narrative_blind_rounds}}: PHASE 1 - Narrative-blind.
+  Available: run_sql, execute_python, vector_search(videos|searches|google_searches)
+  BLOCKED: vector_search(reflections), get_chapter_context
+  Form ALL hypotheses from raw behavioral data only.
+
+Rounds {{phase_2_start}}+: PHASE 2 - Verification allowed.
+  All tools available. [NARRATIVE] only to sanity-check Phase 1 hypotheses.
+
+## Tools
+{{tools}}
+
+## Output format - STRICT, no deviation
+THOUGHT: <your reasoning>
+ACTION: {"tool": "<name>", "args": {<json>}}
+
+To finish:
+ACTION: {"tool": "finish", "args": {"findings": [{"claim": "...", "evidence": "...", "source_tag": "RAW-SQL", "confidence": "high"}], "side_insights": ["..."]}}
+
+findings.source_tag must be RAW-SQL, RAW-COMPUTED, or SEMANTIC-RAW.
+[NARRATIVE]-only findings go in side_insights with a note.
+No prose outside the THOUGHT/ACTION block.
+"""
+
+_prompt_client       = None   # cached Langfuse TextPromptClient (or _NoopPrompt)
+_prompt_seeded       = False  # only seed once per server process
+
 # Hand-written notes that supplement the schema — things pragma_table_info can't express.
 _SCHEMA_NOTES = """\
 
@@ -218,13 +261,8 @@ def _generate_rubric(stats: dict, model: str) -> str:
         )
 
 
-def _build_system_prompt(
-    stats: dict,
-    rubric: str,
-    schema_context: str,
-    narrative_blind_rounds: int,
-    max_rounds: int,
-) -> str:
+def _build_preamble(stats: dict, rubric: str, schema_context: str, max_rounds: int) -> str:
+    """Data-specific context injected before the Langfuse-managed instructions."""
     return textwrap.dedent(f"""\
         You are Echo Speaks — an autonomous data analyst working on Aditya Arya's personal behavioral data.
         Explore raw data, form hypotheses, test them, synthesize surprising findings.
@@ -232,41 +270,27 @@ def _build_system_prompt(
 
         {schema_context}
 
-        ## Epistemic hierarchy — CRITICAL
-        Observations are tagged by source. Honor these tiers strictly:
-        - [RAW-SQL]: direct SQLite result — primary evidence, cite freely
-        - [RAW-COMPUTED]: Python/pandas/numpy result — primary evidence, cite freely
-        - [SEMANTIC-RAW]: semantic search on raw tables — medium trust
-        - [NARRATIVE]: chapter reflections or chapter context — ORIENTATION ONLY.
-          Reflections are LLM-generated, may embed user-provided biographical context.
-          NEVER use [NARRATIVE] as primary evidence for a finding.
-
         ## Surprise rubric — rank findings by these criteria
         {rubric}
-
-        ## Phase rules
-        Rounds 1–{narrative_blind_rounds}: PHASE 1 — Narrative-blind.
-          Available: run_sql, execute_python, vector_search(videos|searches|google_searches)
-          BLOCKED: vector_search(reflections), get_chapter_context
-          Form ALL hypotheses from raw behavioral data only.
-
-        Rounds {narrative_blind_rounds + 1}+: PHASE 2 — Verification allowed.
-          All tools available. [NARRATIVE] only to sanity-check Phase 1 hypotheses.
-
-        ## Tools
-        {{tools}}
-
-        ## Output format — STRICT, no deviation
-        THOUGHT: <your reasoning>
-        ACTION: {{"tool": "<name>", "args": {{<json>}}}}
-
-        To finish:
-        ACTION: {{"tool": "finish", "args": {{"findings": [{{"claim": "...", "evidence": "...", "source_tag": "RAW-SQL", "confidence": "high"}}], "side_insights": ["..."]}}}}
-
-        findings.source_tag must be RAW-SQL, RAW-COMPUTED, or SEMANTIC-RAW.
-        [NARRATIVE]-only findings go in side_insights with a note.
-        No prose outside the THOUGHT/ACTION block.
     """)
+
+
+def _get_instruction_prompt():
+    """Return a compiled-prompt client for the Langfuse-managed instruction block.
+
+    Seeds the prompt to Langfuse on first call if it doesn't exist.
+    Falls back to _NoopPrompt (local template) when Langfuse is unavailable.
+    Cached for the lifetime of the server process.
+    """
+    global _prompt_client, _prompt_seeded
+    if _prompt_client is not None:
+        return _prompt_client
+    lf = get_langfuse()
+    if not _prompt_seeded:
+        lf.seed_prompt("echo-speaks-instructions", _INSTRUCTION_TEMPLATE)
+        _prompt_seeded = True
+    _prompt_client = lf.get_prompt("echo-speaks-instructions", fallback=_INSTRUCTION_TEMPLATE)
+    return _prompt_client
 
 
 def _parse_response(text: str) -> tuple[str, str, dict] | None:
@@ -338,9 +362,8 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
         rubric = _generate_rubric(stats, req.model)
         yield {"type": "rubric_done", "rubric": rubric}
 
-        system_template = _build_system_prompt(
-            stats, rubric, schema_context, req.narrative_blind_rounds, req.max_rounds
-        )
+        preamble      = _build_preamble(stats, rubric, schema_context, req.max_rounds)
+        prompt_client = _get_instruction_prompt()
         history: list[dict] = [{"role": "user", "content": req.query}]
         model_label = req.model
 
@@ -371,7 +394,12 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
 
             yield {"type": "round_start", "round": round_n, "phase": phase}
 
-            system_content = system_template.replace("{tools}", tool_descriptions(phase == 1))
+            instructions = prompt_client.compile(
+                narrative_blind_rounds=str(req.narrative_blind_rounds),
+                phase_2_start=str(req.narrative_blind_rounds + 1),
+                tools=tool_descriptions(phase == 1),
+            )
+            system_content = preamble + "\n" + instructions
             messages = (
                 [{"role": "system", "content": system_content}]
                 + _trim_history(history, _KEEP_FULL_ROUNDS)
