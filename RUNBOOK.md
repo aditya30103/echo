@@ -21,8 +21,9 @@ API keys go in `.env` (copy `.env.example` and fill in values):
 |-----|-------------|
 | `YOUTUBE_API_KEY` | enrich.py |
 | `OPENAI_API_KEY` | embed.py (direct), reflect.py (direct) |
-| `OPENROUTER_API_KEY` | reflect.py / embed.py fallback; Echo Speaks (primary) |
-| `ANTHROPIC_API_KEY` | Echo Speaks (native Claude path, preferred) |
+| `OPENROUTER_API_KEY` | reflect.py / embed.py fallback; Echo Speaks LLM fallback |
+| `ANTHROPIC_API_KEY` | Echo Speaks (primary — preferred over OpenRouter) |
+| `UNSAFE_PYTHON_SANDBOX` | Echo Speaks execute_python tool (set "true" to enable; default false) |
 | `LANGFUSE_PUBLIC_KEY` | Echo Speaks observability (optional) |
 | `LANGFUSE_SECRET_KEY` | Echo Speaks observability (optional) |
 | `LANGFUSE_HOST` | Echo Speaks observability (default: `https://cloud.langfuse.com`) |

@@ -5,6 +5,9 @@ echo.db-wal
 
 # Source data zips — large, sensitive, not needed in repo
 *.zip
+# Spotify export data (same sensitivity rules as watch history)
+spotify-export/
+*.spotify.json
 
 # API keys
 .env
