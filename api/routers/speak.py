@@ -61,7 +61,7 @@ Observations are tagged by source. Honor these tiers strictly:
 ## Phase rules
 Rounds 1-{{narrative_blind_rounds}}: PHASE 1 - Narrative-blind.
   Available: run_sql, execute_python, vector_search(videos|searches|google_searches),
-             run_pelt, run_clustering, youtube_lookup
+             run_pelt, run_clustering, youtube_lookup, web_search
   BLOCKED: vector_search(reflections), run_sql on reflections table
   Form ALL hypotheses from raw behavioral data only.
 
@@ -179,7 +179,7 @@ class Finding(BaseModel):
     source_tag: str
     confidence: str
     narrative_derived: bool = False
-    side_insights: bool = False
+    is_side_insight: bool = False
 
 
 class SpeakResponse(BaseModel):
@@ -190,6 +190,8 @@ class SpeakResponse(BaseModel):
     rounds_used: int
     model: str
     hit_round_limit: bool
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -349,7 +351,7 @@ def _validate_findings(raw: list) -> list[Finding]:
                 source_tag=tag,
                 confidence="medium",
                 narrative_derived=False,
-                side_insights=True,
+                is_side_insight=True,
             ))
         elif tag in ("RAW-SQL", "RAW-COMPUTED", "SEMANTIC-RAW"):
             out.append(Finding(
@@ -358,7 +360,7 @@ def _validate_findings(raw: list) -> list[Finding]:
                 source_tag=tag,
                 confidence=str(f.get("confidence", "medium")),
                 narrative_derived=False,
-                side_insights=False,
+                is_side_insight=False,
             ))
         else:
             # Unknown or NARRATIVE tag — treat as narrative-derived, low confidence.
@@ -368,7 +370,7 @@ def _validate_findings(raw: list) -> list[Finding]:
                 source_tag=tag or "UNKNOWN",
                 confidence="low",
                 narrative_derived=True,
-                side_insights=False,
+                is_side_insight=False,
             ))
     return out
 
@@ -485,10 +487,10 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     unique_combos  = len(set(_tool_calls))
                     efficiency     = unique_combos / len(_tool_calls)
                     lf.score(trace.trace_id, "quality.efficiency", round(efficiency, 3))
-                primary_count = sum(1 for f in findings if not f.side_insights)
+                primary_count = sum(1 for f in findings if not f.is_side_insight)
                 if primary_count > 0 and _total_input_tokens > 0:
-                    burn_rate = _total_input_tokens / primary_count
-                    lf.score(trace.trace_id, "quality.token_burn_rate", round(burn_rate, 0))
+                    cost_per_finding = _total_input_tokens / primary_count
+                    lf.score(trace.trace_id, "quality.cost_per_finding", round(cost_per_finding, 0))
 
                 trace.finish(len(findings), round_n, hit_limit=False)
                 finish_evt = {
@@ -499,6 +501,8 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     "model": model_label,
                     "hit_round_limit": False,
                     "trace_id": trace.trace_id,
+                    "total_input_tokens": _total_input_tokens,
+                    "total_output_tokens": _total_output_tokens,
                 }
                 yield finish_evt
                 return
@@ -544,12 +548,14 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
 @router.post("", response_model=SpeakResponse)
 def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
     """Non-streaming JSON endpoint (curl / testing)."""
-    trace_entries: list[TraceEntry] = []
-    findings:      list[Finding]    = []
-    side_insights: list[str]        = []
-    model_label = req.model
-    hit_limit   = False
-    pending: dict = {}
+    trace_entries:       list[TraceEntry] = []
+    findings:            list[Finding]    = []
+    side_insights:       list[str]        = []
+    model_label          = req.model
+    hit_limit            = False
+    total_input_tokens   = 0
+    total_output_tokens  = 0
+    pending: dict        = {}
 
     for evt in _react_loop(req, db):
         t = evt["type"]
@@ -568,10 +574,12 @@ def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
                 pending["observation"] = "[Agent finished]"
                 if pending.get("round"):
                     trace_entries.append(TraceEntry(**pending))
-            findings      = [Finding(**f) for f in evt.get("findings", [])]
-            side_insights = evt.get("side_insights", [])
-            model_label   = evt.get("model", req.model)
-            hit_limit     = evt.get("hit_round_limit", False)
+            findings             = [Finding(**f) for f in evt.get("findings", [])]
+            side_insights        = evt.get("side_insights", [])
+            model_label          = evt.get("model", req.model)
+            hit_limit            = evt.get("hit_round_limit", False)
+            total_input_tokens   = evt.get("total_input_tokens", 0)
+            total_output_tokens  = evt.get("total_output_tokens", 0)
 
     return SpeakResponse(
         query=req.query,
@@ -581,6 +589,8 @@ def speak(req: SpeakRequest, db: sqlite_utils.Database = Depends(get_db)):
         rounds_used=len(trace_entries),
         model=model_label,
         hit_round_limit=hit_limit,
+        total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
     )
 
 

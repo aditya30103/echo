@@ -5,6 +5,7 @@ ruptures>=1.1.9
 scikit-learn>=1.4.0
 scipy>=1.13.0
 statsmodels>=0.14.0
+duckduckgo-search>=6.0.0
 lancedb>=0.30.0
 openai>=1.30.0
 google-api-python-client>=2.130.0

@@ -2,12 +2,13 @@
 
 import json
 
-from api.tools.sql_tool        import run_sql
-from api.tools.python_tool     import execute_python
-from api.tools.search_tool     import vector_search
-from api.tools.pelt_tool       import run_pelt
-from api.tools.clustering_tool import run_clustering
-from api.tools.youtube_tool    import run_youtube_lookup
+from api.tools.sql_tool          import run_sql
+from api.tools.python_tool       import execute_python
+from api.tools.search_tool       import vector_search
+from api.tools.pelt_tool         import run_pelt
+from api.tools.clustering_tool   import run_clustering
+from api.tools.youtube_tool      import run_youtube_lookup
+from api.tools.web_search_tool   import run_web_search
 
 # Tables whose content is LLM-generated narrative — blocked in Phase 1.
 _NARRATIVE_VECTOR_TABLES = {"reflections"}
@@ -83,10 +84,17 @@ def dispatch(tool: str, args: dict, phase: int, session_state: dict | None = Non
     if tool == "youtube_lookup":
         return run_youtube_lookup(str(args.get("video_id", "")))
 
+    if tool == "web_search":
+        return run_web_search(
+            str(args.get("query", "")),
+            int(args.get("k", 3)),
+            session_state,
+        )
+
     return (
         f"[ERROR] Unknown tool: '{tool}'. Valid tools: "
         "run_sql, execute_python, vector_search, run_pelt, run_clustering, "
-        "youtube_lookup, finish."
+        "youtube_lookup, web_search, finish."
     )
 
 
@@ -123,7 +131,13 @@ def tool_descriptions(narrative_blind: bool = True) -> str:
     Look up a YouTube video via Data API. Returns title, channel, tags, description,
     view count, duration. Use to add external context to an anomalous video.
     Source tag: [EXTERNAL]. Quota-aware (9,000 units/day limit).
-    Example: youtube_lookup("dQw4w9WgXcQ")"""
+    Example: youtube_lookup("dQw4w9WgXcQ")
+
+- web_search(query: str, k: int = 3)
+    Search the web via DuckDuckGo. Returns title + snippet + URL for top k results.
+    Use to cross-reference what was happening in the world when an anomalous pattern appears.
+    Source tag: [EXTERNAL]. Rate-limited: 5 calls per session.
+    Example: web_search("JEE Advanced 2023 date India", 3)"""
 
     narrative_tools = """\
 

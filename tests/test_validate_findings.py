@@ -25,9 +25,9 @@ def test_external_narrative_derived_false():
     assert findings[0].narrative_derived is False
 
 
-def test_external_side_insights_true():
+def test_external_is_side_insight_true():
     findings = _validate_findings([_make("EXTERNAL")])
-    assert findings[0].side_insights is True
+    assert findings[0].is_side_insight is True
 
 
 def test_external_confidence_forced_medium():
@@ -49,9 +49,9 @@ def test_raw_sql_narrative_derived_false():
     assert findings[0].narrative_derived is False
 
 
-def test_raw_sql_side_insights_false():
+def test_raw_sql_is_side_insight_false():
     findings = _validate_findings([_make("RAW-SQL")])
-    assert findings[0].side_insights is False
+    assert findings[0].is_side_insight is False
 
 
 def test_raw_sql_confidence_preserved():
@@ -66,9 +66,9 @@ def test_raw_computed_narrative_derived_false():
     assert findings[0].narrative_derived is False
 
 
-def test_raw_computed_side_insights_false():
+def test_raw_computed_is_side_insight_false():
     findings = _validate_findings([_make("RAW-COMPUTED")])
-    assert findings[0].side_insights is False
+    assert findings[0].is_side_insight is False
 
 
 # ── SEMANTIC-RAW tag ──────────────────────────────────────────────────────────
@@ -78,9 +78,9 @@ def test_semantic_raw_narrative_derived_false():
     assert findings[0].narrative_derived is False
 
 
-def test_semantic_raw_side_insights_false():
+def test_semantic_raw_is_side_insight_false():
     findings = _validate_findings([_make("SEMANTIC-RAW")])
-    assert findings[0].side_insights is False
+    assert findings[0].is_side_insight is False
 
 
 # ── NARRATIVE / unknown tag fallback ─────────────────────────────────────────
@@ -112,7 +112,7 @@ def test_mixed_batch_preserves_order_and_count():
     findings = _validate_findings(raw)
     assert len(findings) == 4
     assert findings[0].narrative_derived is False
-    assert findings[1].side_insights is True
+    assert findings[1].is_side_insight is True
     assert findings[2].narrative_derived is False
     assert findings[3].narrative_derived is True
 

@@ -77,7 +77,7 @@ def test_youtube_missing_api_key():
 def test_youtube_happy_path():
     from api.tools.youtube_tool import run_youtube_lookup
 
-    mock_response = {
+    mock_api_response = {
         "items": [{
             "snippet": {
                 "title": "Test Video",
@@ -91,11 +91,10 @@ def test_youtube_happy_path():
         }]
     }
 
-    with patch("api.tools.youtube_tool.requests") as mock_requests:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = mock_response
-        mock_resp.raise_for_status.return_value = None
-        mock_requests.get.return_value = mock_resp
+    with patch("googleapiclient.discovery.build") as mock_build:
+        mock_yt = MagicMock()
+        mock_build.return_value = mock_yt
+        mock_yt.videos.return_value.list.return_value.execute.return_value = mock_api_response
 
         with patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake_key"}):
             result = run_youtube_lookup("dQw4w9WgXcQ")
@@ -108,17 +107,16 @@ def test_youtube_happy_path():
 def test_youtube_video_not_found():
     from api.tools.youtube_tool import run_youtube_lookup
 
-    with patch("api.tools.youtube_tool.requests") as mock_requests:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"items": []}
-        mock_resp.raise_for_status.return_value = None
-        mock_requests.get.return_value = mock_resp
+    with patch("googleapiclient.discovery.build") as mock_build:
+        mock_yt = MagicMock()
+        mock_build.return_value = mock_yt
+        mock_yt.videos.return_value.list.return_value.execute.return_value = {"items": []}
 
         with patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake_key"}):
             result = run_youtube_lookup("NOTAVALIDID")
 
     assert "[EXTERNAL]" in result
-    assert "not found" in result.lower() or "ERROR" in result
+    assert "no video found" in result.lower() or "not found" in result.lower() or "ERROR" in result
 
 
 # ── execute_python sandbox gate ───────────────────────────────────────────────
@@ -157,6 +155,63 @@ def test_execute_python_statsmodels_available():
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "true"}):
         result = execute_python("import statsmodels.api as sm; print('sm ok')")
     assert "sm ok" in result
+
+
+# ── web_search tool ───────────────────────────────────────────────────────────
+
+def test_web_search_rate_limit_blocks_sixth_call():
+    from api.tools.web_search_tool import run_web_search, _RATE_LIMIT
+    state = {"web_search_count": _RATE_LIMIT}
+    result = run_web_search("anything", k=3, session_state=state)
+    assert "BLOCKED" in result
+    assert "web_search_count" not in result or state["web_search_count"] == _RATE_LIMIT
+
+
+def test_web_search_happy_path():
+    from api.tools.web_search_tool import run_web_search
+    mock_results = [
+        {"title": "Result 1", "body": "Snippet about topic", "href": "https://example.com/1"},
+        {"title": "Result 2", "body": "Another snippet",    "href": "https://example.com/2"},
+    ]
+    state: dict = {}
+    with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.text.return_value = mock_results
+        result = run_web_search("test query", k=2, session_state=state)
+    assert "[EXTERNAL]" in result
+    assert "Result 1" in result
+    assert state["web_search_count"] == 1
+
+
+def test_web_search_empty_results_flags_rate_limit():
+    from api.tools.web_search_tool import run_web_search
+    state: dict = {}
+    with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.text.return_value = []
+        result = run_web_search("obscure query", k=3, session_state=state)
+    assert "rate-limiting" in result.lower() or "no results" in result.lower()
+    assert state["web_search_count"] == 1
+
+
+def test_web_search_exception_increments_and_returns_error():
+    from api.tools.web_search_tool import run_web_search
+    state: dict = {}
+    with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.text.side_effect = RuntimeError("network failure")
+        result = run_web_search("query", k=3, session_state=state)
+    assert "[EXTERNAL]" in result
+    assert "ERROR" in result
+    assert state["web_search_count"] == 1
+
+
+def test_dispatch_web_search_routing():
+    from api.tools import dispatch
+    state: dict = {}
+    with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.text.return_value = [
+            {"title": "T", "body": "B", "href": "https://x.com"}
+        ]
+        result = dispatch("web_search", {"query": "hello", "k": 1}, phase=1, session_state=state)
+    assert "[EXTERNAL]" in result
 
 
 # ── dispatch() session_state threading ───────────────────────────────────────

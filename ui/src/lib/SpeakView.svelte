@@ -1,10 +1,14 @@
 <script lang="ts">
+	import RoundPillStrip from './RoundPillStrip.svelte';
+	import CostFooter from './CostFooter.svelte';
+
 	type Finding = {
 		claim: string;
 		evidence: string;
 		source_tag: string;
 		confidence: string;
 		narrative_derived: boolean;
+		is_side_insight: boolean;
 	};
 
 	type Round = {
@@ -30,6 +34,7 @@
 		'RAW-COMPUTED': '#3b82f6',
 		'SEMANTIC-RAW': '#eab308',
 		'NARRATIVE':    '#f97316',
+		'EXTERNAL':     '#6b7280',
 		'UNKNOWN':      '#6b7280',
 	};
 
@@ -51,7 +56,11 @@
 	let done         = $state(false);
 	let error        = $state('');
 	let traceId      = $state('');
-	let scoreGiven   = $state<number | null>(null);
+	let scoreGiven        = $state<number | null>(null);
+	let totalInputTokens  = $state(0);
+	let totalOutputTokens = $state(0);
+	let expandedFindings  = $state<Set<number>>(new Set());
+	let autoScrollPaused  = $state(false);
 
 	function reset() {
 		rounds = [];
@@ -64,6 +73,10 @@
 		error = '';
 		traceId = '';
 		scoreGiven = null;
+		totalInputTokens = 0;
+		totalOutputTokens = 0;
+		expandedFindings = new Set();
+		autoScrollPaused = false;
 	}
 
 	function currentRound(): Round | undefined {
@@ -112,12 +125,13 @@
 		} else if (type === 'phase_change') {
 			// Visual separator handled via phase field on round_start
 		} else if (type === 'finish') {
-			findings     = (evt.findings as Finding[]) ?? [];
-			sideInsights = (evt.side_insights as string[]) ?? [];
-			modelLabel   = evt.model as string ?? '';
-			hitLimit     = evt.hit_round_limit as boolean ?? false;
-			traceId      = (evt.trace_id as string) ?? '';
-			// Mark last round done
+			findings          = (evt.findings as Finding[]) ?? [];
+			sideInsights      = (evt.side_insights as string[]) ?? [];
+			modelLabel        = (evt.model as string) ?? '';
+			hitLimit          = (evt.hit_round_limit as boolean) ?? false;
+			traceId           = (evt.trace_id as string) ?? '';
+			totalInputTokens  = (evt.total_input_tokens as number) ?? 0;
+			totalOutputTokens = (evt.total_output_tokens as number) ?? 0;
 			rounds = rounds.map((r, i) => i === rounds.length - 1 ? { ...r, done: true, collapsed: true } : r);
 			done = true;
 		} else if (type === 'error') {
@@ -192,8 +206,26 @@
 		if (tool === 'run_sql')        return String(args.query ?? '').trim();
 		if (tool === 'execute_python') return String(args.code ?? '').trim();
 		if (tool === 'vector_search')  return `"${args.query}" → ${args.table}`;
-		if (tool === 'get_chapter_context') return `Chapter ${args.chapter_id}`;
+		if (tool === 'web_search')     return `"${args.query}"`;
+		if (tool === 'youtube_lookup') return String(args.video_id ?? '');
 		return JSON.stringify(args);
+	}
+
+	function handlePillSelect(round: number) {
+		autoScrollPaused = true;
+		const r = rounds.find(x => x.round === round);
+		if (!r) return;
+		if (r.done) {
+			rounds = rounds.map(x => x.round === round ? { ...x, collapsed: false } : x);
+		}
+		const el = document.getElementById(`round-card-${round}`);
+		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function toggleFinding(idx: number) {
+		const next = new Set(expandedFindings);
+		if (next.has(idx)) next.delete(idx); else next.add(idx);
+		expandedFindings = next;
 	}
 </script>
 
@@ -230,6 +262,12 @@
 
 	<!-- ── Agent trace ────────────────────────────────────────── -->
 	{#if rounds.length > 0 || running}
+		{#if rounds.length > 0}
+			<RoundPillStrip
+				rounds={rounds.map(r => ({ round: r.round, tool: r.tool, done: r.done }))}
+				onSelect={handlePillSelect}
+			/>
+		{/if}
 		<div class="trace">
 
 			{#if running && !rubricReady}
@@ -243,7 +281,7 @@
 					<div class="phase-banner">Phase 2 — narrative verification unlocked</div>
 				{/if}
 
-				<div class="round-card" class:collapsed={r.collapsed}>
+				<div class="round-card" class:collapsed={r.collapsed} id="round-card-{r.round}">
 					<button class="round-header" onclick={() => toggleRound(r)}>
 						<span class="round-num">Round {r.round}</span>
 						{#if r.tool}
@@ -292,28 +330,44 @@
 		{/if}
 
 		{#if findings.length > 0}
+			{@const primaryFindings  = findings.filter(f => !f.is_side_insight)}
+			{@const externalFindings = findings.filter(f => f.is_side_insight)}
 			<div class="synthesis">
 				<div class="synthesis-header">
 					<span>Findings</span>
 					{#if modelLabel}<span class="dim" style="font-weight:400;text-transform:none;letter-spacing:0">{modelLabel}</span>{/if}
 				</div>
 				<ol class="findings-list">
-					{#each findings as f, i}
-						<li class="finding">
+					{#each primaryFindings as f, i}
+						<li class="finding finding-accordion" onclick={() => toggleFinding(i)}>
 							<div class="finding-meta">
 								<span class="finding-tag" style="color:{TAG_COLOR[f.source_tag] ?? '#6b7280'}">[{f.source_tag}]</span>
 								<span class="finding-conf" style="color:{CONF_COLOR[f.confidence] ?? '#6b7280'}">{f.confidence}</span>
 								{#if f.narrative_derived}
 									<span class="finding-warn">narrative-derived</span>
 								{/if}
+								{#if f.evidence}
+									<span class="finding-toggle">{expandedFindings.has(i) ? '∨' : '›'}</span>
+								{/if}
 							</div>
 							<p class="finding-claim">{f.claim}</p>
-							{#if f.evidence}
+							{#if expandedFindings.has(i) && f.evidence}
 								<p class="finding-evidence">{f.evidence}</p>
 							{/if}
 						</li>
 					{/each}
 				</ol>
+
+				{#if externalFindings.length > 0}
+					<div class="side-insights">
+						<p class="side-label">External context</p>
+						<ul>
+							{#each externalFindings as f}
+								<li class="external-finding">{f.claim}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 
 				{#if sideInsights.length > 0}
 					<div class="side-insights">
@@ -338,6 +392,16 @@
 					<span class="score-logged">{scoreGiven === 1 ? 'Marked surprising' : 'Marked expected'} — logged to Langfuse</span>
 				{/if}
 			</div>
+		{/if}
+
+		{#if totalInputTokens > 0}
+			{@const primaryCount = findings.filter(f => !f.is_side_insight).length}
+			<CostFooter
+				{totalInputTokens}
+				{totalOutputTokens}
+				model={modelLabel}
+				primaryFindingCount={primaryCount}
+			/>
 		{/if}
 	{/if}
 
@@ -569,6 +633,17 @@
 	}
 	.finding:last-child { border-bottom: none; }
 
+	.finding-accordion {
+		cursor: pointer;
+		user-select: none;
+	}
+	.finding-accordion:hover { background: #0d1117; }
+	.finding-toggle {
+		margin-left: auto;
+		font-size: 0.75rem;
+		color: #374151;
+	}
+
 	.finding-meta {
 		display: flex;
 		align-items: center;
@@ -619,6 +694,7 @@
 		gap: 0.3rem;
 	}
 	.side-insights li { font-size: 0.78rem; color: #9ca3af; line-height: 1.5; }
+	.external-finding { font-size: 0.78rem; color: #6b7280; line-height: 1.5; }
 
 	.synthesis-error {
 		padding: 0.75rem 1rem;
