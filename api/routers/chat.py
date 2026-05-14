@@ -345,7 +345,7 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
         {"role": "system", "content": _build_system_prompt()},
         {"role": "user",   "content": _build_user_prompt(req.question, context_parts)},
     ]
-    answer, model_used = llm_chat(messages, model=req.model, max_tokens=1024, temperature=0.5)
+    answer, model_used, _ = llm_chat(messages, model=req.model, max_tokens=1024, temperature=0.5)
 
     # 7. Build source list for the UI
     sources: list[dict] = []

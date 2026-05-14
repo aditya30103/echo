@@ -127,7 +127,7 @@ def psyche_diff(req: DiffRequest, db: sqlite_utils.Database = Depends(get_db)):
 
     prompt = _build_prompt(a, b)
     messages = [{"role": "user", "content": prompt}]
-    narrative, model_used = llm_chat(messages, model=req.model, max_tokens=600, temperature=0.7)
+    narrative, model_used, _ = llm_chat(messages, model=req.model, max_tokens=600, temperature=0.7)
 
     now = datetime.now(timezone.utc).isoformat()
 

@@ -42,7 +42,17 @@ class _LiveSpan:
 
     def done(self, output, **meta):
         try:
-            self._obs.update(output=output, metadata=meta or None)
+            usage = meta.pop("usage", None)
+            update_kwargs: dict = {"output": output}
+            if usage:
+                update_kwargs["usage"] = {
+                    "input":  usage.get("input_tokens", 0),
+                    "output": usage.get("output_tokens", 0),
+                    "unit":   "TOKENS",
+                }
+            if meta:
+                update_kwargs["metadata"] = meta
+            self._obs.update(**update_kwargs)
             self._obs.end()
         except Exception:
             pass

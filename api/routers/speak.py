@@ -203,7 +203,7 @@ def _generate_rubric(stats: dict, model: str) -> str:
         Return a numbered list only. No preamble.
     """)
     try:
-        rubric, _ = llm_chat(
+        rubric, *_ = llm_chat(
             [{"role": "user", "content": prompt}],
             model=model, max_tokens=400, temperature=0.5,
         )
@@ -380,10 +380,10 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
             llm_gen = trace.generation(round_n, model_label, len(history))
 
             try:
-                raw_response, model_label = llm_chat(
+                raw_response, model_label, usage = llm_chat(
                     messages, model=req.model, max_tokens=1200, temperature=0.3,
                 )
-                llm_gen.done(raw_response[:500])
+                llm_gen.done(raw_response[:500], usage=usage)
             except Exception as e:
                 llm_gen.done(str(e))
                 yield {"type": "error", "round": round_n, "message": str(e)}
