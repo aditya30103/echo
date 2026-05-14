@@ -19,19 +19,20 @@
 	const inRate  = RATES[model]?.in  ?? 3.00;
 	const outRate = RATES[model]?.out ?? 15.00;
 
-	// Anthropic pricing: cache reads = 10% of base; cache writes = 125% of base.
-	// input_tokens includes cache_read and cache_creation tokens, so we subtract
-	// cache_read to rerate it at 10%, then add the extra 25% for cache_creation.
+	// Anthropic billing model:
+	//   input_tokens = regular tokens only (excludes cache reads and writes — separate fields)
+	//   cache_creation_input_tokens = tokens written to cache, billed at 1.25× base
+	//   cache_read_input_tokens     = tokens served from cache, billed at 0.10× base
 	let cost = $derived(
-		((totalInputTokens - totalCacheReadTokens) / 1_000_000) * inRate +
-		(totalCacheReadTokens                      / 1_000_000) * inRate * 0.10 +
-		(totalCacheCreationTokens                  / 1_000_000) * inRate * 0.25 +
-		(totalOutputTokens                         / 1_000_000) * outRate
+		(totalInputTokens         / 1_000_000) * inRate +
+		(totalCacheCreationTokens / 1_000_000) * inRate * 1.25 +
+		(totalCacheReadTokens     / 1_000_000) * inRate * 0.10 +
+		(totalOutputTokens        / 1_000_000) * outRate
 	);
 
 	let costPerFinding = $derived(
 		primaryFindingCount > 0
-			? Math.round((totalInputTokens + totalOutputTokens) / primaryFindingCount)
+			? Math.round((totalInputTokens + totalCacheCreationTokens + totalCacheReadTokens + totalOutputTokens) / primaryFindingCount)
 			: 0
 	);
 </script>
@@ -40,6 +41,10 @@
 	<span>{totalInputTokens.toLocaleString()} in</span>
 	<span class="sep">·</span>
 	<span>{totalOutputTokens.toLocaleString()} out</span>
+	{#if totalCacheCreationTokens > 0}
+		<span class="sep">·</span>
+		<span class="cache-write">{totalCacheCreationTokens.toLocaleString()} written</span>
+	{/if}
 	{#if totalCacheReadTokens > 0}
 		<span class="sep">·</span>
 		<span class="cache-hit">{totalCacheReadTokens.toLocaleString()} cached</span>
@@ -68,5 +73,6 @@
 
 	.sep { color: #374151; }
 	.dollars { color: #6b7280; }
+	.cache-write { color: #8b5cf6; }
 	.cache-hit { color: #3b82f6; }
 </style>

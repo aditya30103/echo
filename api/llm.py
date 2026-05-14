@@ -96,10 +96,13 @@ def chat(
         user_msgs   = [m for m in messages if m["role"] != "system"]
 
         if cached_prefix is not None and system_msgs:
-            # Two-block system: Block 1 (stable preamble, cached) + Block 2 (instructions)
+            # Two cache checkpoints:
+            # Block 1 (preamble: schema + rubric) — stable across ALL rounds → hits from round 2.
+            # Block 2 (instructions: phase rules + tools) — stable within each phase.
+            #   Phase 1→2 transition writes a new Block 2 cache entry (one miss), then hits resume.
             system_param: str | list = [
                 {"type": "text", "text": cached_prefix, "cache_control": {"type": "ephemeral"}},
-                {"type": "text", "text": system_msgs[0]},
+                {"type": "text", "text": system_msgs[0], "cache_control": {"type": "ephemeral"}},
             ]
         else:
             system_param = system_msgs[0] if system_msgs else ""
