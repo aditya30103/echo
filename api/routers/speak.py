@@ -82,6 +82,12 @@ findings.source_tag must be RAW-SQL, RAW-COMPUTED, SEMANTIC-RAW, or EXTERNAL.
 EXTERNAL findings: set confidence="medium" — they appear as supplementary in the response.
 [NARRATIVE]-only findings go in side_insights as strings.
 No prose outside the THOUGHT/ACTION block.
+
+## finish call rules — READ CAREFULLY
+claim: ≤25 words, plain sentence.
+evidence: ≤30 words — cite round numbers and key numbers only (e.g. "rounds 3,7: 68% of watches were autoplay in Ch16"). NEVER paste raw SQL output or multi-line tables into evidence.
+side_insights: plain strings, ≤20 words each.
+Violating these length limits causes JSON parse failures and burns rounds.
 """
 
 _prompt_client       = None   # cached Langfuse TextPromptClient (or _NoopPrompt)
@@ -300,17 +306,52 @@ def _get_instruction_prompt():
     return _prompt_client
 
 
+def _repair_json_strings(s: str) -> str:
+    """Escape unescaped control characters inside JSON string values.
+
+    The finish tool embeds evidence text that often contains literal newlines
+    from SQL result tables. json.loads rejects those — this repairs them without
+    touching structural whitespace between keys/values.
+    """
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in s:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+        elif ch == '\\' and in_string:
+            result.append(ch)
+            escape_next = True
+        elif ch == '"':
+            result.append(ch)
+            in_string = not in_string
+        elif in_string and ch == '\n':
+            result.append('\\n')
+        elif in_string and ch == '\r':
+            result.append('\\r')
+        elif in_string and ch == '\t':
+            result.append('\\t')
+        else:
+            result.append(ch)
+    return ''.join(result)
+
+
 def _parse_response(text: str) -> tuple[str, str, dict] | None:
     thought_m = _THOUGHT_RE.search(text)
     action_m  = _ACTION_RE.search(text)
     if not action_m:
         return None
-    thought = thought_m.group(1).strip() if thought_m else ""
+    thought  = thought_m.group(1).strip() if thought_m else ""
+    raw_json = action_m.group(1)
     try:
-        action = json.loads(action_m.group(1))
-        return thought, str(action.get("tool", "")), dict(action.get("args", {}))
+        action = json.loads(raw_json)
     except json.JSONDecodeError:
-        return None
+        try:
+            action = json.loads(_repair_json_strings(raw_json))
+        except json.JSONDecodeError:
+            return None
+    return thought, str(action.get("tool", "")), dict(action.get("args", {}))
 
 
 def _source_tag(observation: str) -> str:

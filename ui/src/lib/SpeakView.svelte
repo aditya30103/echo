@@ -135,6 +135,13 @@
 			);
 		} else if (type === 'phase_change') {
 			// Visual separator handled via phase field on round_start
+		} else if (type === 'format_error') {
+			// Model output was not valid THOUGHT/ACTION — mark round done so it doesn't stay "running"
+			rounds = rounds.map(r =>
+				r.round === (evt.round as number)
+					? { ...r, observation: '[FORMAT ERROR] Model output unparseable — agent will retry.', source_tag: 'UNKNOWN', done: true }
+					: r
+			);
 		} else if (type === 'finish') {
 			findings             = (evt.findings as Finding[]) ?? [];
 			sideInsights         = (evt.side_insights as string[]) ?? [];
@@ -191,7 +198,7 @@
 			const res = await fetch('/api/speak/stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ query, max_rounds: maxRounds, model: 'auto', narrative_blind_rounds: 6 }),
+				body: JSON.stringify({ query, max_rounds: maxRounds, model: 'auto', narrative_blind_rounds: Math.floor(maxRounds / 2) }),
 			});
 
 			if (!res.ok || !res.body) {
@@ -308,7 +315,7 @@
 				{@const isPhase2Start = r.phase === 2 && (rounds.findIndex(x => x.round === r.round) === 0 || rounds[rounds.findIndex(x => x.round === r.round) - 1]?.phase === 1)}
 
 				{#if isPhase2Start}
-					<div class="phase-banner">Phase 2 — narrative verification unlocked</div>
+					<div class="phase-banner">Phase 2 — all tools unlocked (reflections available for verification only)</div>
 				{/if}
 
 				<div class="round-card" class:collapsed={r.collapsed} id="round-card-{r.round}">
