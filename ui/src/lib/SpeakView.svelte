@@ -40,7 +40,7 @@
 	};
 
 	let query        = $state('');
-	let maxRounds    = $state(12);
+	let maxRounds    = $state(20);
 	let running      = $state(false);
 	let rubricReady  = $state(false);
 	let rounds: Round[]      = $state([]);
