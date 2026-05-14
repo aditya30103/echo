@@ -13,7 +13,7 @@ ENV_PATH = Path(__file__).parent / ".env"
 OPENAI_EMBED_MODEL      = "text-embedding-3-small"
 OPENROUTER_EMBED_MODEL  = "openai/text-embedding-3-small"
 
-ALL_TABLES = ["reflections", "videos", "searches"]
+ALL_TABLES = ["reflections", "videos", "searches", "google_searches"]
 
 
 def load_env():

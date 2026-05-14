@@ -82,26 +82,30 @@ def load_reflections(db: sqlite_utils.Database) -> list[dict]:
 def load_videos(db: sqlite_utils.Database) -> list[dict]:
     # One row per unique video_id; prefer enriched title from video_metadata.
     # Embed "title | channel" so channel context is in the vector.
+    # max_rewatch_count: highest rewatch count for this video across all sessions.
     rows = db.execute("""
         SELECT
             w.video_id,
             COALESCE(vm.title, w.title, w.video_id)   AS title,
             COALESCE(vm.channel_title, '')             AS channel,
-            COUNT(*)                                   AS watch_count
+            COUNT(*)                                   AS watch_count,
+            COALESCE(MAX(ws.rewatch_count), 0)         AS max_rewatch_count
         FROM watches w
         LEFT JOIN video_metadata vm ON w.video_id = vm.video_id
+        LEFT JOIN watch_signals ws  ON ws.watch_id  = w.id
         GROUP BY w.video_id
         ORDER BY watch_count DESC
     """).fetchall()
     records = []
-    for video_id, title, channel, watch_count in rows:
+    for video_id, title, channel, watch_count, max_rewatch_count in rows:
         text = f"{title} | {channel}" if channel else title
         records.append({
-            "video_id":    video_id,
-            "title":       title,
-            "channel":     channel,
-            "watch_count": watch_count,
-            "text":        text,
+            "video_id":          video_id,
+            "title":             title,
+            "channel":           channel,
+            "watch_count":       watch_count,
+            "max_rewatch_count": max_rewatch_count,
+            "text":              text,
         })
     return records
 
@@ -112,6 +116,27 @@ def load_searches(db: sqlite_utils.Database) -> list[dict]:
                MIN(date(searched_at)) AS first_seen,
                MAX(date(searched_at)) AS last_seen
         FROM yt_searches
+        GROUP BY query
+        ORDER BY n DESC
+    """).fetchall()
+    return [
+        {
+            "query":      query,
+            "count":      n,
+            "first_seen": first_seen,
+            "last_seen":  last_seen,
+            "text":       query,
+        }
+        for query, n, first_seen, last_seen in rows
+    ]
+
+
+def load_google_searches(db: sqlite_utils.Database) -> list[dict]:
+    rows = db.execute("""
+        SELECT query, COUNT(*) AS n,
+               MIN(date(searched_at)) AS first_seen,
+               MAX(date(searched_at)) AS last_seen
+        FROM google_searches
         GROUP BY query
         ORDER BY n DESC
     """).fetchall()
@@ -163,9 +188,10 @@ def main():
 
     # Load data
     loaders = {
-        "reflections": load_reflections,
-        "videos":      load_videos,
-        "searches":    load_searches,
+        "reflections":    load_reflections,
+        "videos":         load_videos,
+        "searches":       load_searches,
+        "google_searches": load_google_searches,
     }
     datasets = {name: loaders[name](db) for name in tables_to_run}
 
