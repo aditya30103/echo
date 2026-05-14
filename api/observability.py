@@ -61,13 +61,16 @@ class _LiveSpan:
     def done(self, output, **meta):
         try:
             usage = meta.pop("usage", None)
+            model = meta.pop("model", None)
             update_kwargs: dict = {"output": output}
             if usage:
-                update_kwargs["usage"] = {
+                # Langfuse 4.x uses usage_details (not usage) with "input"/"output" keys
+                update_kwargs["usage_details"] = {
                     "input":  usage.get("input_tokens", 0),
                     "output": usage.get("output_tokens", 0),
-                    "unit":   "TOKENS",
                 }
+            if model:
+                update_kwargs["model"] = model
             if meta:
                 update_kwargs["metadata"] = meta
             self._obs.update(**update_kwargs)

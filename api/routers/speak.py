@@ -409,9 +409,9 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
 
             try:
                 raw_response, model_label, usage = llm_chat(
-                    messages, model=req.model, max_tokens=1200, temperature=0.3,
+                    messages, model=req.model, max_tokens=2000, temperature=0.3,
                 )
-                llm_gen.done(raw_response[:500], usage=usage)
+                llm_gen.done(raw_response[:500], usage=usage, model=model_label)
             except Exception as e:
                 llm_gen.done(str(e))
                 yield {"type": "error", "round": round_n, "message": str(e)}
