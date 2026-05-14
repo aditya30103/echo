@@ -64,9 +64,10 @@
 	let error        = $state('');
 	let traceId      = $state('');
 	let scoreGiven          = $state<number | null>(null);
-	let totalInputTokens    = $state(0);
-	let totalOutputTokens   = $state(0);
-	let totalCacheReadTokens = $state(0);
+	let totalInputTokens         = $state(0);
+	let totalOutputTokens        = $state(0);
+	let totalCacheReadTokens     = $state(0);
+	let totalCacheCreationTokens = $state(0);
 	let expandedFindings    = $state<Set<number>>(new Set());
 	let autoScrollPaused    = $state(false);
 	let findingScores       = $state<Record<number, FindingEval>>({});
@@ -85,6 +86,7 @@
 		totalInputTokens = 0;
 		totalOutputTokens = 0;
 		totalCacheReadTokens = 0;
+		totalCacheCreationTokens = 0;
 		expandedFindings = new Set();
 		autoScrollPaused = false;
 		findingScores = {};
@@ -148,9 +150,10 @@
 			modelLabel           = (evt.model as string) ?? '';
 			hitLimit             = (evt.hit_round_limit as boolean) ?? false;
 			traceId              = (evt.trace_id as string) ?? '';
-			totalInputTokens     = (evt.total_input_tokens as number) ?? 0;
-			totalOutputTokens    = (evt.total_output_tokens as number) ?? 0;
-			totalCacheReadTokens = (evt.total_cache_read_tokens as number) ?? 0;
+			totalInputTokens         = (evt.total_input_tokens as number) ?? 0;
+			totalOutputTokens        = (evt.total_output_tokens as number) ?? 0;
+			totalCacheReadTokens     = (evt.total_cache_read_tokens as number) ?? 0;
+			totalCacheCreationTokens = (evt.total_cache_creation_tokens as number) ?? 0;
 			rounds = rounds.map((r, i) => i === rounds.length - 1 ? { ...r, done: true, collapsed: true } : r);
 			done = true;
 		} else if (type === 'error') {
@@ -264,6 +267,48 @@
 		if (next.has(idx)) next.delete(idx); else next.add(idx);
 		expandedFindings = next;
 	}
+
+	function saveAsMarkdown() {
+		const primaryFindings = findings.filter(f => !f.is_side_insight);
+		const lines: string[] = [
+			`# Echo Analysis`,
+			``,
+			`**Query:** ${query}`,
+			`**Model:** ${modelLabel}  **Rounds:** ${rounds.length}`,
+			``,
+			`---`,
+			``,
+			`## Findings`,
+			``,
+		];
+
+		primaryFindings.forEach((f, i) => {
+			lines.push(`### ${i + 1}. ${f.claim}`);
+			lines.push(`*[${f.source_tag}] ${f.confidence} confidence*`);
+			if (f.evidence) {
+				lines.push(``);
+				lines.push(`> ${f.evidence}`);
+			}
+			lines.push(``);
+		});
+
+		if (sideInsights.length > 0) {
+			lines.push(`## Side Insights`, ``);
+			sideInsights.forEach(s => lines.push(`- ${s}`));
+			lines.push(``);
+		}
+
+		lines.push(`---`);
+		lines.push(`*${totalInputTokens.toLocaleString()} input · ${totalOutputTokens.toLocaleString()} output tokens*`);
+
+		const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+		const url  = URL.createObjectURL(blob);
+		const a    = document.createElement('a');
+		a.href     = url;
+		a.download = `echo-analysis-${new Date().toISOString().slice(0, 10)}.md`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
 </script>
 
 <div class="speak-wrap">
@@ -274,7 +319,7 @@
 			class="query-input"
 			placeholder="Ask Echo to investigate your data…"
 			bind:value={query}
-			rows={3}
+			rows={5}
 			onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runSpeak(); } }}
 		></textarea>
 
@@ -454,6 +499,9 @@
 				{:else}
 					<span class="score-logged">{scoreGiven === 1 ? 'Marked surprising' : 'Marked expected'} — logged to Langfuse</span>
 				{/if}
+				{#if findings.length > 0}
+					<button class="save-btn" onclick={saveAsMarkdown} title="Download findings as Markdown">↓ Save</button>
+				{/if}
 			</div>
 		{/if}
 
@@ -463,6 +511,7 @@
 				{totalInputTokens}
 				{totalOutputTokens}
 				{totalCacheReadTokens}
+				{totalCacheCreationTokens}
 				model={modelLabel}
 				primaryFindingCount={primaryCount}
 			/>
@@ -889,4 +938,18 @@
 		color: #4b5563;
 		font-style: italic;
 	}
+
+	.save-btn {
+		margin-left: auto;
+		font-size: 0.70rem;
+		font-weight: 600;
+		padding: 0.28rem 0.7rem;
+		border-radius: 4px;
+		border: 1px solid #374151;
+		background: none;
+		color: #6b7280;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+	.save-btn:hover { color: #9ca3af; border-color: #6b7280; }
 </style>

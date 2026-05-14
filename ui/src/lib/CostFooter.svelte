@@ -7,10 +7,11 @@
 		'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
 	};
 
-	let { totalInputTokens, totalOutputTokens, totalCacheReadTokens = 0, model, primaryFindingCount }: {
+	let { totalInputTokens, totalOutputTokens, totalCacheReadTokens = 0, totalCacheCreationTokens = 0, model, primaryFindingCount }: {
 		totalInputTokens: number;
 		totalOutputTokens: number;
 		totalCacheReadTokens?: number;
+		totalCacheCreationTokens?: number;
 		model: string;
 		primaryFindingCount: number;
 	} = $props();
@@ -18,10 +19,13 @@
 	const inRate  = RATES[model]?.in  ?? 3.00;
 	const outRate = RATES[model]?.out ?? 15.00;
 
-	// Cache reads are billed at 10% of base input rate (Anthropic pricing).
+	// Anthropic pricing: cache reads = 10% of base; cache writes = 125% of base.
+	// input_tokens includes cache_read and cache_creation tokens, so we subtract
+	// cache_read to rerate it at 10%, then add the extra 25% for cache_creation.
 	let cost = $derived(
 		((totalInputTokens - totalCacheReadTokens) / 1_000_000) * inRate +
 		(totalCacheReadTokens                      / 1_000_000) * inRate * 0.10 +
+		(totalCacheCreationTokens                  / 1_000_000) * inRate * 0.25 +
 		(totalOutputTokens                         / 1_000_000) * outRate
 	);
 
