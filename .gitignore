@@ -43,3 +43,18 @@ AB Test/
 Thumbs.db
 reflections_viewer.html
 lancedb/
+
+# IDE / editor per-developer settings
+.vscode/
+ui/.vscode/
+.idea/
+
+# Claude Code per-developer state
+.claude/
+# (Permits committed CLAUDE.md at repo root since CLAUDE.md is not under .claude/)
+
+# Test caches
+.pytest_cache/
+
+# Log files
+*.log
