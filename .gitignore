@@ -30,6 +30,11 @@ weekly_signal.png
 # Scratch / debug output files
 early_entries.txt
 
+# Langfuse trace dumps — contain user queries about personal data
+trace_corpus.json
+analysis_traces.py
+analysis_synthesis.py
+
 # OS
 .DS_Store
 Thumbs.db

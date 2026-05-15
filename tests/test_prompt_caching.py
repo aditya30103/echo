@@ -1,18 +1,32 @@
-"""Tests for prompt caching in api/llm.py (Sprint 5)."""
+"""Tests for prompt caching in api/llm.py (Sprint 5).
+
+Note: api/llm.py uses `client.messages.stream()` as a context manager (changed
+in commit 6a5a073 to eliminate the 60s wall-clock timeout for long finish
+calls). Tests mock the streaming interface accordingly.
+"""
 
 import os
 from unittest.mock import patch, MagicMock
 
 
-def _make_anthropic_resp(cache_read: int = 0):
+def _make_anthropic_resp(cache_read: int = 0, cache_creation: int = 0):
     resp = MagicMock()
     resp.content = [MagicMock(text="ok")]
     resp.usage.input_tokens = 100
     resp.usage.output_tokens = 10
     resp.usage.cache_read_input_tokens = cache_read
-    resp.usage.cache_creation_input_tokens = 0
+    resp.usage.cache_creation_input_tokens = cache_creation
     resp.stop_reason = "end_turn"
     return resp
+
+
+def _wire_streaming_mock(mock_client, resp):
+    """Wire a MagicMock anthropic client so `with client.messages.stream(...) as s: s.get_final_message()` returns resp."""
+    stream_ctx = MagicMock()
+    stream_ctx.__enter__.return_value.get_final_message.return_value = resp
+    stream_ctx.__exit__.return_value = False
+    mock_client.messages.stream.return_value = stream_ctx
+    return stream_ctx
 
 
 def test_chat_cache_prefix_wraps_system_into_two_blocks():
@@ -21,7 +35,7 @@ def test_chat_cache_prefix_wraps_system_into_two_blocks():
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
-        mock_client.messages.create.return_value = _make_anthropic_resp()
+        _wire_streaming_mock(mock_client, _make_anthropic_resp())
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake"}):
             chat(
@@ -29,13 +43,15 @@ def test_chat_cache_prefix_wraps_system_into_two_blocks():
                 cached_prefix="stable preamble",
             )
 
-    call_kwargs = mock_client.messages.create.call_args.kwargs
+    call_kwargs = mock_client.messages.stream.call_args.kwargs
     system = call_kwargs["system"]
     assert isinstance(system, list), "system should be a list when cached_prefix is set"
     assert len(system) == 2
     assert system[0]["cache_control"] == {"type": "ephemeral"}
     assert system[0]["text"] == "stable preamble"
     assert system[1]["text"] == "phase instructions"
+    # Block 2 must also be cached (per commit 23710b3)
+    assert system[1]["cache_control"] == {"type": "ephemeral"}
 
 
 def test_chat_no_prefix_uses_string_system():
@@ -44,12 +60,12 @@ def test_chat_no_prefix_uses_string_system():
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
-        mock_client.messages.create.return_value = _make_anthropic_resp()
+        _wire_streaming_mock(mock_client, _make_anthropic_resp())
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake"}):
             chat([{"role": "system", "content": "instructions"}, {"role": "user", "content": "hi"}])
 
-    call_kwargs = mock_client.messages.create.call_args.kwargs
+    call_kwargs = mock_client.messages.stream.call_args.kwargs
     assert isinstance(call_kwargs["system"], str)
 
 
@@ -59,7 +75,7 @@ def test_chat_cache_read_tokens_returned_in_usage():
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
-        mock_client.messages.create.return_value = _make_anthropic_resp(cache_read=150)
+        _wire_streaming_mock(mock_client, _make_anthropic_resp(cache_read=150))
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake"}):
             _, _, usage, _ = chat([{"role": "user", "content": "hi"}])

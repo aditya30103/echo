@@ -64,11 +64,22 @@ class _LiveSpan:
             model = meta.pop("model", None)
             update_kwargs: dict = {"output": output}
             if usage:
-                # Langfuse 4.x uses usage_details (not usage) with "input"/"output" keys
-                update_kwargs["usage_details"] = {
+                # Langfuse 4.x usage_details keys. We pass both Anthropic's native
+                # field names and Langfuse's canonical short names — Langfuse's
+                # Claude model definitions map either form for cost calc.
+                # input_tokens from Anthropic excludes cache reads/writes already,
+                # so the four fields together describe the full bill correctly.
+                usage_details: dict = {
                     "input":  usage.get("input_tokens", 0),
                     "output": usage.get("output_tokens", 0),
                 }
+                cache_read     = usage.get("cache_read_input_tokens", 0)
+                cache_creation = usage.get("cache_creation_input_tokens", 0)
+                if cache_read:
+                    usage_details["cache_read_input_tokens"] = cache_read
+                if cache_creation:
+                    usage_details["cache_creation_input_tokens"] = cache_creation
+                update_kwargs["usage_details"] = usage_details
             if model:
                 update_kwargs["model"] = model
             if meta:

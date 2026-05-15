@@ -127,6 +127,11 @@ At the start of any session:
 
 ## Pending (as of 2026-05-15)
 
+- **Echo Speaks context management overhaul** — layered redesign of `_trim_history`. Layer 0
+  (housekeeping: `rounds_used` reporting on exception break + Langfuse cache token emission)
+  shipping today. Layer 1 (per-tool structured compression replacing `[:200]`) entering
+  `/plan-eng-review`. Layers 2 (heuristic scratchpad) and 3 (Haiku summarization for >25 round
+  runs) deferred to their own design reviews. Full analysis: `CONTEXT_MGMT_ANALYSIS.md`.
 - **Spotify Phase 2** — `enrich_spotify.py` (Spotify API → `spotify_tracks`: duration_ms, genres,
   valence, energy, danceability, tempo, acousticness, instrumentalness, loudness, mode, key).
   Requires `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` in `.env`. Audio features endpoint

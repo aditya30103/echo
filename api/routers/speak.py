@@ -541,6 +541,13 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
         _total_cache_read_tokens     = 0
         _total_cache_creation_tokens = 0
 
+        # round_n is bound by the loop, but we read it after the loop to report
+        # the actual last round reached (vs req.max_rounds). Initialise here so
+        # the post-loop branch is safe even if max_rounds=0 or the loop breaks
+        # before round 1.
+        round_n = 0
+        error_msg: str | None = None
+
         for round_n in range(1, req.max_rounds + 1):
             phase = 1 if round_n <= req.narrative_blind_rounds else 2
 
@@ -597,7 +604,8 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                     lf.score(trace.trace_id, "quality.truncated", 1.0)
             except Exception as e:
                 llm_gen.done(str(e))
-                yield {"type": "error", "round": round_n, "message": str(e)}
+                error_msg = str(e)
+                yield {"type": "error", "round": round_n, "message": error_msg}
                 break
 
             parsed = _parse_response(raw_response)
@@ -670,15 +678,31 @@ def _react_loop(req: SpeakRequest, db: sqlite_utils.Database) -> Iterator[dict]:
                 "content": f"OBSERVATION (round {round_n}/{req.max_rounds}, phase {phase}):\n{observation}",
             })
 
-        # Hit round limit
-        trace.finish(0, req.max_rounds, hit_limit=True)
+        # Loop exited without finish. Two distinct cases:
+        # (a) error_msg set → exception broke the loop early. rounds_used = actual
+        #     round reached, hit_round_limit = False (we crashed, didn't run out).
+        # (b) loop completed naturally → rounds_used = max_rounds, hit_limit = True.
+        if error_msg:
+            rounds_used   = round_n
+            hit_limit     = False
+            side_insights = [
+                f"Run aborted at round {round_n}/{req.max_rounds} due to error: {error_msg[:200]}"
+            ]
+        else:
+            rounds_used   = req.max_rounds
+            hit_limit     = True
+            side_insights = [
+                f"Agent reached the {req.max_rounds}-round limit without completing synthesis."
+            ]
+
+        trace.finish(0, rounds_used, hit_limit=hit_limit)
         limit_evt = {
             "type": "finish",
             "findings": [],
-            "side_insights": [f"Agent reached the {req.max_rounds}-round limit without completing synthesis."],
-            "rounds_used": req.max_rounds,
+            "side_insights": side_insights,
+            "rounds_used": rounds_used,
             "model": model_label,
-            "hit_round_limit": True,
+            "hit_round_limit": hit_limit,
             "trace_id": trace.trace_id,
             "total_input_tokens": _total_input_tokens,
             "total_output_tokens": _total_output_tokens,
