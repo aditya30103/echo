@@ -54,6 +54,44 @@ is expected behavior, not an error.
 
 ---
 
+## TODO: Spotify Phase 2 — enrich_spotify.py (duration_ms + explicit)
+
+**What:** Run `python enrich_spotify.py` once a new Spotify Developer app is available.
+~4,322 tracks pending at 1 req/s → ~72 min. Writes `duration_ms`, `explicit`, `uri_verified`
+to `spotify_tracks` table.
+
+**Why:** Blocked by Spotify app quota: original app was deleted, replacement creation was
+rate-limited for 24 hours. Safe to run any time after a new app is created at
+developer.spotify.com/dashboard (Client Credentials flow, no user login needed).
+
+**Note:** `reason_end = 'trackdone'` already provides a superior completion signal —
+Phase 3 behavioral signals are fully functional without this. `duration_ms` adds completion
+ratio computation and enables the Spotify lancedb embedding (Phase 3b below).
+
+**When unblocked:**
+1. Create new Spotify app at developer.spotify.com/dashboard
+2. Add `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` to `.env`
+3. `python enrich_spotify.py --dry-run` — confirm 4,322 pending
+4. `python enrich_spotify.py` — ~72 min, check progress every 5%
+
+**Blocked by:** Spotify account: "created too many apps recently, try again in 24h" (as of 2026-05-14).
+
+---
+
+## TODO: Spotify Phase 3b — embed spotify_tracks into lancedb
+
+**What:** Add `embed_spotify_tracks()` to `embed.py`. Embed `"track_name | artist_name"` strings
+from `spotify_tracks` into a new lancedb `spotify_tracks` table. Wire into agent `vector_search`
+dispatch in `api/tools/search.py`.
+
+**Why:** Lets the agent answer "find tracks similar to X" or "what was I listening to around the
+same time as [YouTube topic]?" via semantic search — right now Spotify is SQL-only.
+
+**Blocked by:** Phase 2 (enrich_spotify.py) must complete first so `spotify_tracks` has populated
+`track_name` and `artist_name` rows to embed.
+
+---
+
 ## TODO: LLM-as-judge eval batch after 20+ annotated traces
 
 **What:** After 20+ human-annotated findings exist in Langfuse, run a batch LLM-as-judge pass.
