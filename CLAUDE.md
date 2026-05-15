@@ -127,10 +127,15 @@ At the start of any session:
 
 ## Pending (as of 2026-05-15)
 
-- **Spotify ingestion** — data expected ~2026-05-17. New table in `ingest.py` when ready.
-  Same sensitivity rules and .gitignore constraints as watch history.
+- **Spotify Phase 2** — `enrich_spotify.py` (Spotify API → `spotify_tracks`: duration_ms, genres,
+  valence, energy, danceability, tempo, acousticness, instrumentalness, loudness, mode, key).
+  Requires `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` in `.env`. Audio features endpoint
+  deprecated for apps registered after Nov 2024 — requires pre-Nov 2024 app or NULL fallback.
+- **Spotify Phase 3** — `compute_spotify_signals()` in `signals.py` (session grouping with 30-min
+  gap, intent_class, prior_play_count, completion_ratio, two-pass session_id). Then extend `embed.py`
+  with `embed_spotify_tracks()` → LanceDB `spotify_tracks` table and wire into agent `vector_search`.
 - **LLM-as-judge eval batch** — after 20+ human-annotated traces via Echo Speaks score buttons.
-  Details in `TODOS.md`. Requires an OpenAI key for the judge call.
+  Details in `TODOS.md`. OpenAI key now available.
 - **DeepSeek/Ollama routing** — low urgency. Add model slug to `api/llm.py`, point at local
   Ollama via `OPENROUTER_BASE_URL`. Same interface as current OpenRouter path.
 
@@ -143,6 +148,10 @@ Echo Speaks is the primary product. The autonomous ReAct agent (POST /api/speak)
 tabs are deprecated and removed.
 
 **UI tabs:** Echo Speaks (landing) · Binge Sessions · Agency Map · Ask Echo (RAG demo)
+
+**Model toggle:** Echo Speaks UI has an Auto / Claude / GPT-4o toggle in the query controls.
+`auto` prefers Claude when `ANTHROPIC_API_KEY` is set. `gpt4o` routes directly to OpenAI
+(`OPENAI_API_KEY`). Both keys are now configured.
 
 **Agent tools:** run_sql, execute_python (full DS sandbox: numpy/pandas/scipy/sklearn/ruptures),
 vector_search, run_pelt, run_clustering, youtube_lookup, web_search (5 calls/session)
