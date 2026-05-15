@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Echo — Spotify track enrichment.
+Echo — Spotify track enrichment via search API.
 
-Fetches track metadata and artist genres for every unique spotify_track_uri
-in spotify_plays, storing results in the spotify_tracks table.
+Fetches duration_ms and explicit flag for every unique spotify_track_uri in
+spotify_plays using the /search endpoint (the only Spotify API endpoint
+available to apps registered after November 2024).
 
-Audio features (valence, energy, danceability, etc.) require a Spotify app
-registered before November 2024. If unavailable, those columns are stored as
-NULL and the script continues — all other data is still fetched.
+Batch endpoints (/tracks, /artists) and audio features (/audio-features) are
+all restricted for new apps. See DATA.md for the full column-level notes.
+
+Search approach: query "track:{name} artist:{artist}" and verify that the
+returned URI matches the URI we already have in spotify_plays. Mismatches are
+flagged (uri_verified=0) but duration_ms is still stored.
 
 Safe to interrupt and re-run: already-enriched URIs are skipped.
 
@@ -36,15 +40,16 @@ BASE    = Path(__file__).parent
 DB_PATH = BASE / "echo.db"
 
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
-SPOTIFY_API_BASE  = "https://api.spotify.com/v1"
+SPOTIFY_SEARCH    = "https://api.spotify.com/v1/search"
 
-TRACK_BATCH_SIZE   = 50   # /tracks endpoint max
-ARTIST_BATCH_SIZE  = 50   # /artists endpoint max
-FEATURE_BATCH_SIZE = 100  # /audio-features endpoint max
+# 1.0s between searches → 1 req/s, conservative against Spotify's daily quota.
+# Debug/test runs can exhaust quota faster than the per-minute limit suggests —
+# stay well under with a generous inter-request pause.
+SLEEP_SEC = 1.0
 
-# Pause between batch requests — Spotify has unofficial rate limits (~180 req/30s).
-# 0.15s gives ~6 req/s, well within the limit. On 429, we respect Retry-After.
-SLEEP_SEC = 0.15
+# If Retry-After exceeds this, abort rather than hang. Quota reset is ~24h;
+# re-run tomorrow (or with a fresh Client ID) rather than sleeping for hours.
+MAX_RETRY_WAIT_SEC = 120
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -55,32 +60,22 @@ def init_schema(db: sqlite_utils.Database) -> None:
             spotify_track_uri   TEXT PRIMARY KEY,
             track_name          TEXT,
             artist_name         TEXT,
-            artist_uri          TEXT,
-            album_name          TEXT,
             duration_ms         INTEGER,
-            popularity          INTEGER,
             explicit            INTEGER,
-            genres              TEXT,
-            valence             REAL,
-            energy              REAL,
-            danceability        REAL,
-            tempo               REAL,
-            acousticness        REAL,
-            instrumentalness    REAL,
-            loudness            REAL,
-            speechiness         REAL,
-            mode                INTEGER,
-            musical_key         INTEGER,
-            audio_features_available INTEGER NOT NULL DEFAULT 0,
+            uri_verified        INTEGER NOT NULL DEFAULT 0,
             fetched_at          TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    # Add uri_verified if table was created by an older schema version
+    cols = {row[1] for row in db.execute("PRAGMA table_info(spotify_tracks)")}
+    if "uri_verified" not in cols:
+        db.execute("ALTER TABLE spotify_tracks ADD COLUMN uri_verified INTEGER NOT NULL DEFAULT 0")
 
 
 # ── Spotify auth ─────────────────────────────────────────────────────────────
 
 class SpotifyClient:
-    """Thin httpx wrapper — Client Credentials flow, auto token refresh."""
+    """Minimal httpx wrapper — Client Credentials flow, auto token refresh."""
 
     def __init__(self, client_id: str, client_secret: str) -> None:
         self._client_id     = client_id
@@ -89,7 +84,7 @@ class SpotifyClient:
         self._token_expiry  = 0.0
         self._http          = httpx.Client(timeout=30)
 
-    def _refresh_token(self) -> None:
+    def _refresh(self) -> None:
         resp = self._http.post(
             SPOTIFY_TOKEN_URL,
             data={"grant_type": "client_credentials"},
@@ -98,123 +93,50 @@ class SpotifyClient:
         resp.raise_for_status()
         data = resp.json()
         self._token = data["access_token"]
-        # Subtract 60s buffer from 3600s expiry
         self._token_expiry = time.time() + data.get("expires_in", 3600) - 60
 
-    def _headers(self) -> dict:
+    def search(self, track_name: str, artist_name: str) -> dict | None:
+        """Search for a track. Returns the first result item or None."""
         if time.time() >= self._token_expiry:
-            self._refresh_token()
-        return {"Authorization": f"Bearer {self._token}"}
+            self._refresh()
 
-    def get(self, path: str, params: dict | None = None) -> dict:
-        """GET /v1/<path> with automatic retry on 429 and token refresh on 401."""
-        url = f"{SPOTIFY_API_BASE}/{path}"
-        for attempt in range(4):
-            resp = self._http.get(url, headers=self._headers(), params=params)
+        q = f'track:"{track_name}" artist:"{artist_name}"'
+        for attempt in range(3):
+            resp = self._http.get(
+                SPOTIFY_SEARCH,
+                headers={"Authorization": f"Bearer {self._token}"},
+                params={"q": q, "type": "track", "limit": 1},
+            )
             if resp.status_code == 429:
                 wait = int(resp.headers.get("Retry-After", "5"))
+                if wait > MAX_RETRY_WAIT_SEC:
+                    print(f"      [quota exhausted] Retry-After={wait}s (~{round(wait/3600,1)}h)")
+                    print(f"      Spotify daily quota is reset. Re-run tomorrow or use a new Client ID.")
+                    raise SystemExit(1)
                 print(f"      [rate limit] waiting {wait}s…")
                 time.sleep(wait)
                 continue
             if resp.status_code == 401:
-                self._token_expiry = 0  # force refresh
+                self._token_expiry = 0
                 continue
-            return resp
-        resp.raise_for_status()
-        return resp
+            if resp.status_code != 200:
+                return None
+            items = resp.json().get("tracks", {}).get("items") or []
+            return items[0] if items else None
+        return None
 
     def close(self) -> None:
         self._http.close()
 
 
-# ── Batch fetchers ───────────────────────────────────────────────────────────
-
-def fetch_tracks(client: SpotifyClient, uris: list[str]) -> dict[str, dict]:
-    """Fetch track objects for a list of spotify:track:... URIs.
-
-    Returns {uri: track_object}. Missing/unavailable tracks are omitted.
-    """
-    ids = [u.split(":")[-1] for u in uris]
-    result = {}
-    for i in range(0, len(ids), TRACK_BATCH_SIZE):
-        batch_ids = ids[i : i + TRACK_BATCH_SIZE]
-        batch_uris = uris[i : i + TRACK_BATCH_SIZE]
-        resp = client.get("tracks", {"ids": ",".join(batch_ids)})
-        if resp.status_code != 200:
-            print(f"      [warn] /tracks returned {resp.status_code}, skipping batch")
-            time.sleep(SLEEP_SEC)
-            continue
-        tracks = resp.json().get("tracks") or []
-        for uri, track in zip(batch_uris, tracks):
-            if track:
-                result[uri] = track
-        time.sleep(SLEEP_SEC)
-    return result
-
-
-def fetch_artists(client: SpotifyClient, artist_uris: list[str]) -> dict[str, dict]:
-    """Fetch artist objects for a list of spotify:artist:... URIs.
-
-    Returns {uri: artist_object}.
-    """
-    ids = [u.split(":")[-1] for u in artist_uris]
-    result = {}
-    for i in range(0, len(ids), ARTIST_BATCH_SIZE):
-        batch_ids = ids[i : i + ARTIST_BATCH_SIZE]
-        batch_uris = artist_uris[i : i + ARTIST_BATCH_SIZE]
-        resp = client.get("artists", {"ids": ",".join(batch_ids)})
-        if resp.status_code != 200:
-            print(f"      [warn] /artists returned {resp.status_code}, skipping batch")
-            time.sleep(SLEEP_SEC)
-            continue
-        artists = resp.json().get("artists") or []
-        for uri, artist in zip(batch_uris, artists):
-            if artist:
-                result[uri] = artist
-        time.sleep(SLEEP_SEC)
-    return result
-
-
-def fetch_audio_features(
-    client: SpotifyClient, uris: list[str]
-) -> tuple[dict[str, dict], bool]:
-    """Attempt to fetch audio features. Returns ({uri: features}, available).
-
-    available=False means the endpoint returned 403 (deprecated for this app).
-    In that case the returned dict is empty.
-    """
-    ids = [u.split(":")[-1] for u in uris]
-    result = {}
-    available = True
-
-    for i in range(0, len(ids), FEATURE_BATCH_SIZE):
-        batch_ids = ids[i : i + FEATURE_BATCH_SIZE]
-        batch_uris = uris[i : i + FEATURE_BATCH_SIZE]
-        resp = client.get("audio-features", {"ids": ",".join(batch_ids)})
-        if resp.status_code == 403:
-            available = False
-            return {}, False
-        if resp.status_code != 200:
-            print(f"      [warn] /audio-features returned {resp.status_code}, skipping batch")
-            time.sleep(SLEEP_SEC)
-            continue
-        features_list = resp.json().get("audio_features") or []
-        for uri, feat in zip(batch_uris, features_list):
-            if feat:
-                result[uri] = feat
-        time.sleep(SLEEP_SEC)
-
-    return result, available
-
-
 # ── Main enrichment ──────────────────────────────────────────────────────────
 
 def enrich(db: sqlite_utils.Database, client: SpotifyClient, limit: int | None) -> None:
-    # Find all unique track URIs not yet enriched
-    pending_uris: list[str] = [
-        row[0]
+    # Unique (uri, track_name, artist_name) not yet in spotify_tracks
+    pending: list[tuple[str, str, str]] = [
+        (row[0], row[1] or "", row[2] or "")
         for row in db.execute("""
-            SELECT DISTINCT p.spotify_track_uri
+            SELECT DISTINCT p.spotify_track_uri, p.track_name, p.artist_name
             FROM spotify_plays p
             LEFT JOIN spotify_tracks t ON p.spotify_track_uri = t.spotify_track_uri
             WHERE p.content_type = 'track'
@@ -225,70 +147,54 @@ def enrich(db: sqlite_utils.Database, client: SpotifyClient, limit: int | None) 
     ]
 
     if limit:
-        pending_uris = pending_uris[:limit]
+        pending = pending[:limit]
 
-    total = len(pending_uris)
+    total = len(pending)
     if total == 0:
         print("      All tracks already enriched.")
         return
 
-    print(f"      {total} tracks to enrich")
+    print(f"      {total} tracks to enrich via search (~{round(total * SLEEP_SEC / 60, 1)} min)")
 
-    # ── Step 1: fetch track metadata ────────────────────────────────────────
-    print("      [1/3] Fetching track metadata…")
-    track_data = fetch_tracks(client, pending_uris)
-    print(f"            {len(track_data)}/{total} fetched")
+    rows        = []
+    verified    = 0
+    unverified  = 0
+    not_found   = 0
+    report_every = max(1, total // 20)  # progress every 5%
 
-    # ── Step 2: fetch artist genres ─────────────────────────────────────────
-    print("      [2/3] Fetching artist genres…")
-    artist_uris = list({
-        track["artists"][0]["uri"]
-        for track in track_data.values()
-        if track.get("artists")
-    })
-    artist_data = fetch_artists(client, artist_uris)
-    print(f"            {len(artist_data)} unique artists enriched")
+    for i, (uri, track_name, artist_name) in enumerate(pending, 1):
+        result = client.search(track_name, artist_name)
+        time.sleep(SLEEP_SEC)
 
-    # ── Step 3: fetch audio features (may be unavailable) ───────────────────
-    print("      [3/3] Fetching audio features…")
-    feature_data, features_available = fetch_audio_features(client, list(track_data.keys()))
-    if features_available:
-        print(f"            {len(feature_data)} tracks with audio features")
-    else:
-        print("            [skip] 403 — audio features deprecated for this app (new app registration)")
-        print("                   valence/energy/danceability/tempo columns will be NULL")
+        if result is None:
+            not_found += 1
+            rows.append({
+                "spotify_track_uri": uri,
+                "track_name":        track_name or None,
+                "artist_name":       artist_name or None,
+                "duration_ms":       None,
+                "explicit":          None,
+                "uri_verified":      0,
+            })
+        else:
+            matched = result.get("uri") == uri
+            if matched:
+                verified += 1
+            else:
+                unverified += 1
 
-    # ── Assemble rows ────────────────────────────────────────────────────────
-    rows = []
-    for uri, track in track_data.items():
-        artist_uri  = track["artists"][0]["uri"] if track.get("artists") else None
-        artist_obj  = artist_data.get(artist_uri) if artist_uri else None
-        genres      = json.dumps(artist_obj["genres"]) if artist_obj else None
-        feat        = feature_data.get(uri) if features_available else None
+            rows.append({
+                "spotify_track_uri": uri,
+                "track_name":        result.get("name") or track_name or None,
+                "artist_name":       (result["artists"][0]["name"] if result.get("artists") else None) or artist_name or None,
+                "duration_ms":       result.get("duration_ms"),
+                "explicit":          int(bool(result.get("explicit"))),
+                "uri_verified":      int(matched),
+            })
 
-        rows.append({
-            "spotify_track_uri":          uri,
-            "track_name":                 track.get("name"),
-            "artist_name":                track["artists"][0]["name"] if track.get("artists") else None,
-            "artist_uri":                 artist_uri,
-            "album_name":                 track.get("album", {}).get("name"),
-            "duration_ms":                track.get("duration_ms"),
-            "popularity":                 track.get("popularity"),
-            "explicit":                   int(bool(track.get("explicit"))),
-            "genres":                     genres,
-            "valence":                    feat.get("valence")          if feat else None,
-            "energy":                     feat.get("energy")           if feat else None,
-            "danceability":               feat.get("danceability")     if feat else None,
-            "tempo":                      feat.get("tempo")            if feat else None,
-            "acousticness":               feat.get("acousticness")     if feat else None,
-            "instrumentalness":           feat.get("instrumentalness") if feat else None,
-            "loudness":                   feat.get("loudness")         if feat else None,
-            "speechiness":                feat.get("speechiness")      if feat else None,
-            "mode":                       feat.get("mode")             if feat else None,
-            "musical_key":                feat.get("key")              if feat else None,
-            "audio_features_available":   int(features_available),
-            "fetched_at":                 None,  # DEFAULT in schema
-        })
+        if i % report_every == 0 or i == total:
+            pct = round(i / total * 100)
+            print(f"      [{pct:3d}%] {i}/{total}  verified={verified}  unverified={unverified}  not_found={not_found}")
 
     db["spotify_tracks"].insert_all(rows, replace=True)
     print(f"      +{len(rows)} rows written to spotify_tracks")
@@ -299,7 +205,7 @@ def enrich(db: sqlite_utils.Database, client: SpotifyClient, limit: int | None) 
 def main() -> None:
     load_env()
 
-    parser = argparse.ArgumentParser(description="Enrich spotify_plays with Spotify API track metadata")
+    parser = argparse.ArgumentParser(description="Enrich spotify_plays via Spotify search API")
     parser.add_argument("--dry-run", action="store_true", help="Show pending count, no API calls")
     parser.add_argument("--limit",   type=int,            help="Enrich at most N pending tracks")
     args = parser.parse_args()
@@ -310,14 +216,14 @@ def main() -> None:
     if not client_id or not client_secret:
         print(
             "ERROR: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in .env\n"
-            "Create a Spotify Developer app at developer.spotify.com/dashboard\n"
-            "then copy Client ID and Client Secret into .env."
+            "Create a Spotify Developer app at developer.spotify.com/dashboard"
         )
         sys.exit(1)
 
     db = sqlite_utils.Database(DB_PATH)
     init_schema(db)
 
+    already = db.execute("SELECT COUNT(*) FROM spotify_tracks").fetchone()[0]
     pending = db.execute("""
         SELECT COUNT(DISTINCT p.spotify_track_uri)
         FROM spotify_plays p
@@ -326,7 +232,6 @@ def main() -> None:
           AND p.spotify_track_uri IS NOT NULL
           AND t.spotify_track_uri IS NULL
     """).fetchone()[0]
-    already = db.execute("SELECT COUNT(*) FROM spotify_tracks").fetchone()[0]
 
     print(f"spotify_tracks: {already} already enriched, {pending} pending")
 
@@ -344,17 +249,14 @@ def main() -> None:
     finally:
         client.close()
 
-    total_now = db.execute("SELECT COUNT(*) FROM spotify_tracks").fetchone()[0]
-    genres_filled = db.execute(
-        "SELECT COUNT(*) FROM spotify_tracks WHERE genres IS NOT NULL AND genres != '[]'"
-    ).fetchone()[0]
-    duration_filled = db.execute(
-        "SELECT COUNT(*) FROM spotify_tracks WHERE duration_ms IS NOT NULL"
-    ).fetchone()[0]
+    total_now      = db.execute("SELECT COUNT(*) FROM spotify_tracks").fetchone()[0]
+    duration_ok    = db.execute("SELECT COUNT(*) FROM spotify_tracks WHERE duration_ms IS NOT NULL").fetchone()[0]
+    uri_ok         = db.execute("SELECT COUNT(*) FROM spotify_tracks WHERE uri_verified = 1").fetchone()[0]
+
     print()
     print(f"Done. spotify_tracks: {total_now} total")
-    print(f"  duration_ms filled: {duration_filled}")
-    print(f"  genres filled:      {genres_filled}")
+    print(f"  duration_ms filled : {duration_ok} ({round(duration_ok/total_now*100)}%)")
+    print(f"  URI verified match : {uri_ok} ({round(uri_ok/total_now*100)}%)")
 
 
 if __name__ == "__main__":
