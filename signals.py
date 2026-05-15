@@ -33,6 +33,24 @@ AUTOPLAY_GAP_MIN = 3    # same-channel watch within 3 min of previous → is_aut
                         # this is a PROXY, not ground truth — YouTube's autoplay
                         # frequently crosses channels; cross-channel autoplay is invisible here
 
+SPOTIFY_SESSION_GAP_MIN = 30  # same gap logic as YouTube — consistent cross-modal sessions
+
+# reason_start → intent_class mapping.
+# clickrow/playbtn = user explicitly chose this track (intentional).
+# trackdone = previous track finished, this started automatically (passive).
+# fwdbtn/backbtn = user navigated to this track by skipping (seek).
+# appload/remote/trackerror = app/device initiated playback (session_start).
+INTENT_MAP: dict[str, str] = {
+    "clickrow":   "intentional",
+    "playbtn":    "intentional",
+    "trackdone":  "passive",
+    "fwdbtn":     "seek",
+    "backbtn":    "seek",
+    "appload":    "session_start",
+    "remote":     "session_start",
+    "trackerror": "session_start",
+}
+
 
 def _parse(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -131,6 +149,85 @@ def compute(db: sqlite_utils.Database) -> list[dict]:
     return rows, session_id
 
 
+def compute_spotify_signals(db: sqlite_utils.Database) -> tuple[list[dict], int]:
+    plays = db.execute("""
+        SELECT id, spotify_track_uri, ts, reason_start, reason_end, skipped
+        FROM spotify_plays
+        ORDER BY ts
+    """).fetchall()
+
+    # ── Session assignment (same 30-min gap logic as YouTube) ─────────────────
+    sessions: list[list[tuple]] = []
+    current: list[tuple] = []
+
+    for play in plays:
+        dt = _parse(play[2])
+        if not current or (dt - current[-1][1]).total_seconds() / 60 > SPOTIFY_SESSION_GAP_MIN:
+            if current:
+                sessions.append(current)
+            current = [(play, dt)]
+        else:
+            current.append((play, dt))
+    if current:
+        sessions.append(current)
+
+    # ── Per-play signal computation ───────────────────────────────────────────
+    uri_play_count: dict[str, int] = defaultdict(int)
+    rows: list[dict] = []
+    session_id = 0
+
+    for session in sessions:
+        session_id += 1
+        session_len = len(session)
+
+        for depth_0, (play, _dt) in enumerate(session):
+            play_id, uri, _ts, reason_start, reason_end, skipped = play
+            depth = depth_0 + 1
+
+            prior = uri_play_count[uri]
+            uri_play_count[uri] += 1
+
+            rows.append({
+                "play_id":          play_id,
+                "session_id":       session_id,
+                "session_depth":    depth,
+                "session_length":   session_len,
+                "is_repeat":        int(prior > 0),
+                "prior_play_count": prior,
+                # reason_end = 'trackdone' is the authoritative completion signal —
+                # Spotify's playback engine sets this only when the track finishes naturally.
+                "fully_played":     int(reason_end == "trackdone"),
+                # fwdbtn = user pressed next; skipped=1 = Spotify's internal skip flag.
+                # Both independently indicate the user did not want to hear more.
+                "user_skipped":     int(reason_end == "fwdbtn" or bool(skipped)),
+                "intent_class":     INTENT_MAP.get(reason_start or "", "unknown"),
+            })
+
+    return rows, session_id
+
+
+def print_spotify_summary(rows: list[dict], n_sessions: int) -> None:
+    total       = len(rows)
+    repeats     = sum(1 for r in rows if r["is_repeat"])
+    fully       = sum(1 for r in rows if r["fully_played"])
+    skipped     = sum(1 for r in rows if r["user_skipped"])
+    intentional = sum(1 for r in rows if r["intent_class"] == "intentional")
+    passive     = sum(1 for r in rows if r["intent_class"] == "passive")
+    solo        = sum(1 for r in rows if r["session_length"] == 1)
+
+    print("=" * 52)
+    print("SPOTIFY SIGNALS COMPLETE")
+    print("=" * 52)
+    print(f"  Total plays:        {total:,}")
+    print(f"  Sessions:           {n_sessions:,}")
+    print(f"  Solo sessions:      {solo:,}  ({solo * 100 // total}% of plays)")
+    print(f"  Repeat plays:       {repeats:,}  ({repeats * 100 // total}%)")
+    print(f"  Fully played:       {fully:,}  ({fully * 100 // total}%)")
+    print(f"  User skipped:       {skipped:,}  ({skipped * 100 // total}%)")
+    print(f"  Intentional start:  {intentional:,}  ({intentional * 100 // total}%)")
+    print(f"  Passive (autoplay): {passive:,}  ({passive * 100 // total}%)")
+
+
 def print_summary(rows: list[dict], n_sessions: int):
     total     = len(rows)
     rewatches = sum(1 for r in rows if r["is_rewatch"])
@@ -178,6 +275,23 @@ def main():
     db.execute("DROP TABLE IF EXISTS watch_signals")
     db["watch_signals"].insert_all(rows, pk="watch_id")
     db.conn.commit()
+
+    print()
+    spotify_present = db.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE name='spotify_plays'"
+    ).fetchone()[0]
+    if spotify_present:
+        print("Computing Spotify signals...", flush=True)
+        sp_rows, sp_sessions = compute_spotify_signals(db)
+        print(f"  {len(sp_rows):,} plays across {sp_sessions:,} sessions", flush=True)
+        print("Writing spotify_signals table...", flush=True)
+        db.execute("DROP TABLE IF EXISTS spotify_signals")
+        db["spotify_signals"].insert_all(sp_rows, pk="play_id")
+        db.conn.commit()
+        print()
+        print_spotify_summary(sp_rows, sp_sessions)
+    else:
+        print("[skip] spotify_plays table not found — run ingest.py first")
 
     print()
     print_summary(rows, n_sessions)

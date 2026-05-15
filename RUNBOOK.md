@@ -46,7 +46,7 @@ ingest.py → enrich.py → detect.py → signals.py → reflect.py → embed.py
 | 1 | `ingest.py` | 3 YouTube/Activity zip files + Spotify zip | watches, yt_searches, watch_later, google_searches, discover_feed, calendar_events, transactions, spotify_plays | Yes — UNIQUE constraints |
 | 2 | `enrich.py` | watches | video_metadata | Yes — skips already-fetched videos |
 | 3 | `detect.py` | watches, video_metadata | chapters, chapter_fingerprints | Yes — drops and recomputes |
-| 4 | `signals.py` | watches, yt_searches, watch_later | watch_signals | Yes — drops and recomputes |
+| 4 | `signals.py` | watches, yt_searches, watch_later, spotify_plays | watch_signals, spotify_signals | Yes — drops and recomputes |
 | 5 | `reflect.py` | all tables | reflections | Yes — appends new rows |
 | 6 | `embed.py` | echo.db (reflections, videos, yt_searches, google_searches) | lancedb/ (4 tables) | Yes — drops and recreates each table |
 
@@ -121,8 +121,9 @@ Re-running with a different penalty is safe — drops and rewrites chapters + ch
 python signals.py
 ```
 
-Computes per-watch engagement signals. No arguments needed.
-Re-running drops and rewrites the entire watch_signals table.
+Computes per-watch and per-play engagement signals. No arguments needed.
+Re-running drops and rewrites both `watch_signals` (YouTube) and `spotify_signals` (Spotify, if `spotify_plays` table exists).
+Expected output: 6,280 watch signals across ~1,100 sessions; 16,678 Spotify signals across 2,165 sessions.
 
 ### Step 5 — Reflect (Layer 3)
 
@@ -368,6 +369,7 @@ The API server log will print `[observability] Langfuse connected: ...` on start
 | `SESSION_GAP_MIN` | signals.py | 30 | Minutes between watches that starts a new session |
 | `SEARCH_WIN_MIN` | signals.py | 10 | Search window before watch for is_search_driven |
 | `AUTOPLAY_GAP_MIN` | signals.py | 3 | Max gap (min) for same-channel autoplay proxy |
+| `SPOTIFY_SESSION_GAP_MIN` | signals.py | 30 | Minutes between Spotify plays that starts a new session |
 | `BATCH_SIZE` | embed.py | 512 | Inputs per embeddings API call (OpenAI hard limit: 2048) |
 | `max_rounds` | speak.py | 20 | Default ReAct rounds for Echo Speaks |
 | `narrative_blind_rounds` | speak.py | 10 | Rounds before chapter reflections are available to agent |

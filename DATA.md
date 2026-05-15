@@ -277,6 +277,30 @@ Per-watch engagement signals. One row per row in `watches`.
 
 ---
 
+### `spotify_signals` (signals.py)
+
+Per-play behavioral signals for Spotify. One row per row in `spotify_plays`. Populated by `signals.py` alongside `watch_signals`. 16,678 rows across 2,165 sessions.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| play_id | INTEGER PK FK→spotify_plays | |
+| session_id | INTEGER | Sequential Spotify session number (1-indexed, chronological) |
+| session_depth | INTEGER | Position within session (1 = first play) |
+| session_length | INTEGER | Total plays in this session |
+| is_repeat | INTEGER | 1 if this `spotify_track_uri` was played at any earlier point in history |
+| prior_play_count | INTEGER | Number of times this URI was played before this instance (0 = first listen) |
+| fully_played | INTEGER | 1 if `reason_end = 'trackdone'` (track finished naturally — authoritative completion signal) |
+| user_skipped | INTEGER | 1 if `reason_end = 'fwdbtn'` OR `skipped = 1` (user actively cut the track short) |
+| intent_class | TEXT | Derived from `reason_start`: `intentional` (clickrow/playbtn), `passive` (trackdone), `seek` (fwdbtn/backbtn), `session_start` (appload/remote/trackerror), `unknown` |
+
+**Session definition:** Consecutive plays with gap ≤ 30 min → same session (identical logic to `watch_signals`). Sessions are comparable across both tables.
+**fully_played:** Prefer this over computing `ms_played / duration_ms` — `trackdone` is set by Spotify's playback engine when the track actually ends, independent of timing.
+**user_skipped:** `reason_end = 'fwdbtn'` and `skipped = 1` are independent signals; either alone is sufficient. `user_skipped = 1` means the user did not want to continue listening.
+**prior_play_count:** 0 means first ever listen. Use `is_repeat` for binary repeat detection, `prior_play_count` for affinity depth (e.g., tracks with prior_play_count ≥ 10 are obsessions).
+**intent_class cross-modal:** `passive` in Spotify (algorithm played next) maps conceptually to `is_autoplay` in YouTube, but Spotify's signal is authoritative (direct from playback engine) rather than a proxy.
+
+---
+
 ### `reflections` (reflect.py)
 
 GPT-4o generated narrative reflections.

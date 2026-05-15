@@ -39,7 +39,7 @@ _SCHEMA_TABLES = [
     "google_searches", "yt_searches",
     "chapters", "chapter_fingerprints", "reflections",
     "calendar_events", "transactions",
-    "spotify_plays",
+    "spotify_plays", "spotify_signals",
 ]
 
 # ── Langfuse-managed instruction template ─────────────────────────────────────
@@ -203,6 +203,60 @@ SELECT artist_name, COUNT(*) plays, ROUND(100.0*SUM(skipped)/COUNT(*),1) skip_pc
 FROM spotify_plays WHERE content_type='track'
 GROUP BY artist_name HAVING COUNT(*) >= 10
 ORDER BY skip_pct DESC LIMIT 20
+
+## Spotify behavioral signals (spotify_signals table)
+JOIN: spotify_signals.play_id = spotify_plays.id  (one row per play, same 16,678 count)
+
+Key columns:
+  session_id        = Spotify session (30-min gap between plays = new session; 2,165 total)
+  session_depth     = position within session (1 = first play)
+  session_length    = total plays in that session
+  is_repeat         = 1 if this URI was played before in history (73% of plays)
+  prior_play_count  = how many times this URI was played before this instance
+  fully_played      = 1 if reason_end = 'trackdone' (track finished naturally; ~55% of plays)
+  user_skipped      = 1 if reason_end = 'fwdbtn' OR skipped = 1 (user cut it short; ~32%)
+  intent_class      = derived from reason_start:
+                        'intentional'   = clickrow / playbtn (user chose this track)
+                        'passive'       = trackdone (previous track ended, algorithm continued)
+                        'seek'          = fwdbtn / backbtn (user navigated)
+                        'session_start' = appload / remote / trackerror
+                        'unknown'       = reason_start not in known values
+
+Completion signal: fully_played is authoritative — prefer it over computing ms_played / duration_ms.
+Skip signal: user_skipped = 1 means the user actively rejected the track.
+
+Cross-modal session comparison (Spotify vs YouTube):
+  Both use 30-min gap session definition → session_length distributions are directly comparable.
+
+-- Fully played vs skipped by intent class
+SELECT intent_class,
+       COUNT(*) plays,
+       ROUND(100.0*SUM(fully_played)/COUNT(*),1) pct_completed,
+       ROUND(100.0*SUM(user_skipped)/COUNT(*),1) pct_skipped
+FROM spotify_signals
+GROUP BY intent_class ORDER BY plays DESC
+
+-- Most repeated tracks (high prior_play_count)
+SELECT sp.track_name, sp.artist_name,
+       MAX(ss.prior_play_count)+1 AS total_plays
+FROM spotify_signals ss
+JOIN spotify_plays sp ON ss.play_id = sp.id
+WHERE sp.content_type = 'track'
+GROUP BY sp.spotify_track_uri
+ORDER BY total_plays DESC LIMIT 20
+
+-- Binge listening sessions (≥10 plays)
+SELECT ss.session_id, MAX(ss.session_length) depth,
+       MIN(sp.ts) started_at,
+       ROUND(100.0*SUM(ss.fully_played)/COUNT(*),1) completion_pct
+FROM spotify_signals ss
+JOIN spotify_plays sp ON ss.play_id = sp.id
+WHERE ss.session_length >= 10
+GROUP BY ss.session_id ORDER BY depth DESC LIMIT 20
+
+-- Intent class distribution
+SELECT intent_class, COUNT(*) n, ROUND(100.0*COUNT(*)/16678.0,1) pct
+FROM spotify_signals GROUP BY intent_class ORDER BY n DESC
 """
 
 
