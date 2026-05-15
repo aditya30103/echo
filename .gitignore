@@ -35,6 +35,9 @@ trace_corpus.json
 analysis_traces.py
 analysis_synthesis.py
 
+# A/B test markdown exports — contain personal findings about real life data
+AB Test/
+
 # OS
 .DS_Store
 Thumbs.db
