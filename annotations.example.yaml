@@ -1,0 +1,62 @@
+# Echo — Life Context Annotations (TEMPLATE)
+#
+# Copy this file to `private/annotations.yaml` and fill in your own life context.
+# `private/` is gitignored — your real annotations stay local.
+#
+# Why this exists
+# ───────────────
+# reflect.py builds prompts for GPT-4o that try to interpret each chapter of your
+# YouTube history. Some shifts in your data only make sense with context the model
+# can't infer (school name, illness, breakup, job change). Annotations let you
+# inject that context into the prompt as a `LIFE CONTEXT` section.
+#
+# Without annotations, reflect.py works fine — it just produces more generic
+# narratives. Add entries when you find a chapter reflection misinterprets what
+# the data represents (e.g. "this looks like procrastination" when it was actually
+# you shifting to a new job and reducing personal viewing).
+#
+# Format
+# ──────
+#   - start: YYYY-MM-DD        # inclusive, required
+#     end:   YYYY-MM-DD        # inclusive, required
+#     note:  >                 # plain English, as specific as possible
+#       Free text. Can be multi-line.
+#       Be factual and concrete — the model will incorporate it directly into
+#       the prompt as ground truth that isn't derivable from the data.
+#
+# Entries are injected if they overlap with the chapter's [start_at, end_at] range.
+# A chapter can pick up multiple annotations.
+#
+# Tip: detect.py creates the chapters; check `chapters` table in echo.db to see
+# the date ranges before writing annotations targeted at specific chapters.
+
+annotations:
+
+  # ── Example 1: a major life event that explains a behavioral pivot ────────
+  - start: "YYYY-MM-DD"
+    end:   "YYYY-MM-DD"
+    note: >
+      In <month year>, <something happened> — e.g. "I left my job at <company>",
+      "I started preparing for <exam>", "I moved from <city A> to <city B>".
+      The shift in YouTube content during this period reflects <how this
+      changed your viewing>, not a personality change.
+
+  # ── Example 2: a calendar label clarification ─────────────────────────────
+  - start: "YYYY-MM-DD"
+    end:   "YYYY-MM-DD"
+    note: >
+      The calendar entries labelled "<label>" during this period are
+      <what they actually were> — e.g. "<actual context>, not <wrong inference>" —
+      because I used the same calendar label for two different commitments.
+
+  # ── Example 3: a "this looks like X but is actually Y" correction ─────────
+  - start: "YYYY-MM-DD"
+    end:   "YYYY-MM-DD"
+    note: >
+      The high educational-content ratio in this period might look like
+      <surface interpretation>, but in reality it was <actual context> —
+      e.g. "I was preparing for a competitive exam, not a career switch".
+
+  # Add as many entries as you want. Date ranges can overlap.
+  # Empty file (or just `annotations: []`) is also valid — reflect.py will
+  # silently skip the LIFE CONTEXT section.

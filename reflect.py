@@ -32,7 +32,9 @@ import sqlite_utils
 BASE             = Path(__file__).parent
 DB_PATH          = BASE / "echo.db"
 ENV_PATH         = BASE / ".env"
-ANNOTATIONS_PATH = BASE / "annotations.yaml"
+# Personal life-context lives under private/ (gitignored); the .example template
+# at repo root documents the schema. reflect.py works without either file.
+ANNOTATIONS_PATH = BASE / "private" / "annotations.yaml"
 
 OPENAI_MODEL      = "gpt-4o"
 OPENROUTER_MODEL  = "openai/gpt-4o"  # OpenRouter uses provider-namespaced IDs

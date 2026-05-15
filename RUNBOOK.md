@@ -141,11 +141,17 @@ Preview with `--dry-run` before running live to check prompt quality.
 
 #### Life context annotations
 
-`annotations.yaml` holds date-range-tagged clarifications about real-life events
-(e.g. "these [McK] calendar entries are prior institution POR events, not McKinsey work").
-reflect.py reads this file at prompt-build time and injects matching entries into
-the `LIFE CONTEXT` section of each chapter prompt. Add entries here whenever a
-chapter reflection misinterprets what the data represents.
+`private/annotations.yaml` holds date-range-tagged clarifications about
+real-life events that the data alone can't reveal (school name, illness,
+job change, mislabeled calendar entries). reflect.py reads this file at
+prompt-build time and injects matching entries into the `LIFE CONTEXT`
+section of each chapter prompt.
+
+The `private/` directory is gitignored so your personal context stays local.
+Copy `annotations.example.yaml` (at repo root) to `private/annotations.yaml`
+and fill in your own entries. reflect.py runs fine without the file — you
+just lose the LIFE CONTEXT injection. Add entries whenever a chapter
+reflection misinterprets what the data represents.
 
 ### Step 6 — Embed (Layer 4)
 

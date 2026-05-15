@@ -4,7 +4,7 @@ description: "Identity reconstructed from the reverberations of attention."
 databases:
   echo:
     title: "Echo"
-    description: "Your YouTube watch history. Start anywhere."
+    description: "Your YouTube watch history, ingested from Google Takeout. Start anywhere."
 
     queries:
 
@@ -62,8 +62,7 @@ databases:
         title: "Year at a Glance"
         description: >
           All active days in a given year, sorted by intensity.
-          Try a year that matters to you.
-          Format: YYYY
+          Try a year that matters to you. Format: YYYY
         sql: |
           SELECT
             date(datetime(watched_at, '+330 minutes'))                 AS date_ist,
@@ -292,8 +291,8 @@ databases:
       calendar_phases:
         title: "Calendar Phases"
         description: >
-          Events from all your calendars — all your calendars.
-          Use to anchor what was happening in your life during behavioral shifts.
+          Events grouped by calendar and month — useful for anchoring what was
+          happening in your life during behavioral shifts in the watch data.
         sql: |
           SELECT
             calendar_name,
@@ -303,23 +302,30 @@ databases:
           GROUP BY calendar_name, month
           ORDER BY month, calendar_name
 
-      mck_calendar:
+      single_calendar:
         title: "Single Calendar View"
-        description: "All events from a single calendar."
+        description: >
+          All events from one named calendar. Edit the WHERE clause below
+          (e.g. 'Personal', 'Work', 'Travel') to focus on the calendar that
+          anchors a specific chapter of your life.
         sql: |
           SELECT
             summary,
             start_date,
-            end_date
+            end_date,
+            calendar_name
           FROM calendar_events
-          WHERE calendar_name = 'McK'
+          WHERE calendar_name = (
+            SELECT calendar_name FROM calendar_events
+            GROUP BY calendar_name ORDER BY COUNT(*) DESC LIMIT 1
+          )
           ORDER BY start_date
 
       transactions_rhythm:
         title: "Transaction Rhythm"
         description: >
           Google Pay spending patterns by month.
-          Where your money went correlates with where your attention went.
+          Where your money went often correlates with where your attention went.
         sql: |
           SELECT
             substr(datetime(transacted_at, '+330 minutes'), 1, 7)        AS month,

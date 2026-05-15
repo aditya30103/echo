@@ -58,3 +58,7 @@ ui/.vscode/
 
 # Log files
 *.log
+
+# Personal life-context annotations (per-user, never committed)
+# See annotations.example.yaml at repo root for the template.
+private/
