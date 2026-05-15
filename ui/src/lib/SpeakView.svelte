@@ -269,6 +269,16 @@
 		expandedFindings = next;
 	}
 
+	// Same RATES table + cost formula as CostFooter.svelte — kept in sync so the
+	// markdown export and the on-screen footer always show identical numbers.
+	const MD_RATES: Record<string, { in: number; out: number }> = {
+		'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+		'claude-opus-4-7':           { in: 15.00, out: 75.00 },
+		'claude-haiku-4-5-20251001': { in: 0.80,  out: 4.00  },
+		'gpt-4o':                    { in: 5.00,  out: 15.00 },
+		'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
+	};
+
 	function saveAsMarkdown() {
 		const primaryFindings = findings.filter(f => !f.is_side_insight);
 		const lines: string[] = [
@@ -299,8 +309,42 @@
 			lines.push(``);
 		}
 
+		// ── Cost block: full breakdown so A/B comparisons across runs are precise. ──
+		// Mirrors CostFooter.svelte's formula:
+		//   input × inRate + cache_creation × inRate × 1.25 + cache_read × inRate × 0.10 + output × outRate
+		// `input_tokens` from Anthropic excludes cache reads/writes — they bill separately.
+		const inRate  = MD_RATES[modelLabel]?.in  ?? 3.00;
+		const outRate = MD_RATES[modelLabel]?.out ?? 15.00;
+		const inputCost          = (totalInputTokens         / 1_000_000) * inRate;
+		const outputCost         = (totalOutputTokens        / 1_000_000) * outRate;
+		const cacheWriteCost     = (totalCacheCreationTokens / 1_000_000) * inRate * 1.25;
+		const cacheReadCost      = (totalCacheReadTokens     / 1_000_000) * inRate * 0.10;
+		const totalCost          = inputCost + outputCost + cacheWriteCost + cacheReadCost;
+		const primaryCount       = primaryFindings.length;
+		const costPerFinding     = primaryCount > 0 ? totalCost / primaryCount : 0;
+
+		const fmt = (n: number) => n.toLocaleString();
+		const usd = (n: number) => `$${n.toFixed(4)}`;
+
 		lines.push(`---`);
-		lines.push(`*${totalInputTokens.toLocaleString()} input · ${totalOutputTokens.toLocaleString()} output tokens*`);
+		lines.push(``);
+		lines.push(`## Cost & Tokens`);
+		lines.push(``);
+		lines.push(`| Stream | Tokens | Rate | Cost |`);
+		lines.push(`|---|---:|---:|---:|`);
+		lines.push(`| Input (uncached) | ${fmt(totalInputTokens)} | $${inRate.toFixed(2)}/M | ${usd(inputCost)} |`);
+		if (totalCacheCreationTokens > 0) {
+			lines.push(`| Cache writes | ${fmt(totalCacheCreationTokens)} | $${(inRate * 1.25).toFixed(3)}/M (1.25×) | ${usd(cacheWriteCost)} |`);
+		}
+		if (totalCacheReadTokens > 0) {
+			lines.push(`| Cache reads | ${fmt(totalCacheReadTokens)} | $${(inRate * 0.10).toFixed(3)}/M (0.10×) | ${usd(cacheReadCost)} |`);
+		}
+		lines.push(`| Output | ${fmt(totalOutputTokens)} | $${outRate.toFixed(2)}/M | ${usd(outputCost)} |`);
+		lines.push(`| **Total** | | | **${usd(totalCost)}** |`);
+		lines.push(``);
+		if (primaryCount > 0) {
+			lines.push(`*${primaryCount} primary findings · ${usd(costPerFinding)} per finding · ${rounds.length} rounds*`);
+		}
 
 		const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
 		const url  = URL.createObjectURL(blob);
