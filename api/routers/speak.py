@@ -14,6 +14,7 @@ from api.db import get_db
 from api.llm import chat as llm_chat
 from api.observability import get_langfuse
 from api.tools import dispatch, tool_descriptions
+from api.tools.compressors import compress_assistant, compress_observation
 
 router = APIRouter(prefix="/api/speak", tags=["speak"])
 
@@ -464,10 +465,14 @@ def _trim_history(history: list[dict], keep_full: int = _KEEP_FULL_ROUNDS) -> li
     """Compress old rounds so context window stays manageable over long sessions.
 
     For the _KEEP_FULL_ROUNDS most recent rounds: kept verbatim.
-    For older rounds:
-    - user OBSERVATION messages: first 200 chars + "[... trimmed]"
-    - assistant THOUGHT+ACTION messages: first 120 chars + "[... trimmed]"
-      (old reasoning is noise after 50 rounds; the agent only needs the gist)
+    For older rounds (Layer 1 — per-tool structured compression):
+    - user OBSERVATION messages: dispatched via `compress_observation` to a
+      per-tag compressor (SQL/Python/vsearch/external/narrative) that keeps
+      key structural info (columns, first/last row, headers, totals).
+    - assistant THOUGHT+ACTION messages: dispatched via `compress_assistant`
+      which keeps the first sentence of the THOUGHT plus the tool name.
+    Both compressors are infallible — any failure falls back to the pre-Layer-1
+    first-N-chars trim. See api/tools/compressors.py + CONTEXT_MGMT_ANALYSIS.md.
     """
     if len(history) <= keep_full * 2 + 1:
         return history
@@ -477,9 +482,9 @@ def _trim_history(history: list[dict], keep_full: int = _KEEP_FULL_ROUNDS) -> li
         if i == 0 or i >= cutoff:
             result.append(msg)
         elif msg["role"] == "user" and "OBSERVATION" in msg["content"]:
-            result.append({"role": "user", "content": msg["content"][:200] + " [... trimmed]"})
+            result.append({"role": "user", "content": compress_observation(msg["content"])})
         elif msg["role"] == "assistant":
-            result.append({"role": "assistant", "content": msg["content"][:120] + " [... trimmed]"})
+            result.append({"role": "assistant", "content": compress_assistant(msg["content"])})
         else:
             result.append(msg)
     return result

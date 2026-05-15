@@ -128,11 +128,13 @@ At the start of any session:
 ## Pending (as of 2026-05-15)
 
 - **Echo Speaks context management overhaul** — layered redesign of `_trim_history`.
-  Layer 0 (housekeeping: `rounds_used` reporting on exception break + Langfuse cache
-  token emission) SHIPPED 2026-05-15 in commit `3e53091`. Layer 1 (per-tool structured
-  compression replacing `[:200]`) next, entering `/plan-eng-review`. Layers 2 (heuristic
-  scratchpad) and 3 (Haiku summarization for >25 round runs) deferred to their own design
-  reviews. Full analysis: `CONTEXT_MGMT_ANALYSIS.md`.
+  Layer 0 (housekeeping) SHIPPED 2026-05-15 in commit `3e53091`. Layer 1 (per-tool
+  structured compression in `api/tools/compressors.py`) SHIPPED 2026-05-15 — replaces
+  the `[:200]` truncation with semantic per-tag compressors (SQL/Python/vsearch/
+  external/narrative). Real-world result: 1892-char SQL observation → 165-char
+  compressed (~11x reduction) while preserving columns, first/last row, and row count.
+  Layers 2 (heuristic scratchpad) and 3 (Haiku summarization for >25 round runs)
+  deferred to their own design reviews. Full analysis: `CONTEXT_MGMT_ANALYSIS.md`.
 - **Spotify Phase 2** — `enrich_spotify.py` (Spotify API → `spotify_tracks`: duration_ms, genres,
   valence, energy, danceability, tempo, acousticness, instrumentalness, loudness, mode, key).
   Requires `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` in `.env`. Audio features endpoint
