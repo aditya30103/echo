@@ -53,6 +53,7 @@
 
 	let query        = $state('');
 	let maxRounds    = $state(20);
+	let selectedModel = $state<'auto' | 'claude' | 'gpt4o'>('auto');
 	let running      = $state(false);
 	let rubricReady  = $state(false);
 	let rounds: Round[]      = $state([]);
@@ -201,7 +202,7 @@
 			const res = await fetch('/api/speak/stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ query, max_rounds: maxRounds, model: 'auto', narrative_blind_rounds: Math.floor(maxRounds / 2) }),
+				body: JSON.stringify({ query, max_rounds: maxRounds, model: selectedModel, narrative_blind_rounds: Math.floor(maxRounds / 2) }),
 			});
 
 			if (!res.ok || !res.body) {
@@ -336,6 +337,16 @@
 				Max rounds
 				<input type="number" min={4} max={60} bind:value={maxRounds} class="rounds-input" />
 			</label>
+			<div class="model-toggle" role="group" aria-label="Model">
+				{#each ([['auto', 'Auto'], ['claude', 'Claude'], ['gpt4o', 'GPT-4o']] as const) as [val, label]}
+					<button
+						class="model-btn"
+						class:active={selectedModel === val}
+						onclick={() => selectedModel = val}
+						disabled={running}
+					>{label}</button>
+				{/each}
+			</div>
 			<button class="run-btn" onclick={runSpeak} disabled={running || !query.trim()}>
 				{running ? 'Investigating…' : 'Investigate'}
 			</button>
@@ -595,6 +606,30 @@
 		padding: 0.2rem 0.4rem;
 		text-align: center;
 	}
+
+	.model-toggle {
+		display: flex;
+		gap: 0;
+		border: 1px solid #374151;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+	.model-btn {
+		background: none;
+		border: none;
+		border-right: 1px solid #374151;
+		color: #4b5563;
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0.2rem 0.55rem;
+		cursor: pointer;
+		transition: background 0.12s, color 0.12s;
+		white-space: nowrap;
+	}
+	.model-btn:last-child { border-right: none; }
+	.model-btn:hover:not(:disabled) { background: #1f2937; color: #9ca3af; }
+	.model-btn.active { background: #1f2937; color: #e5e7eb; }
+	.model-btn:disabled { opacity: 0.4; cursor: default; }
 
 	.run-btn {
 		margin-left: auto;
