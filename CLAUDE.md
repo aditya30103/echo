@@ -131,9 +131,8 @@ At the start of any session:
   valence, energy, danceability, tempo, acousticness, instrumentalness, loudness, mode, key).
   Requires `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` in `.env`. Audio features endpoint
   deprecated for apps registered after Nov 2024 — requires pre-Nov 2024 app or NULL fallback.
-- **Spotify Phase 3** — `compute_spotify_signals()` in `signals.py` (session grouping with 30-min
-  gap, intent_class, prior_play_count, completion_ratio, two-pass session_id). Then extend `embed.py`
-  with `embed_spotify_tracks()` → LanceDB `spotify_tracks` table and wire into agent `vector_search`.
+- **Spotify Phase 3b** — extend `embed.py` with `embed_spotify_tracks()` → LanceDB `spotify_tracks`
+  table and wire into agent `vector_search`. Blocked by Phase 2 (needs enriched track names to embed).
 - **LLM-as-judge eval batch** — after 20+ human-annotated traces via Echo Speaks score buttons.
   Details in `TODOS.md`. OpenAI key now available.
 - **DeepSeek/Ollama routing** — low urgency. Add model slug to `api/llm.py`, point at local
