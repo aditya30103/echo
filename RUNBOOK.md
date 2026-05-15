@@ -24,7 +24,7 @@ API keys go in `.env` (copy `.env.example` and fill in values):
 | `OPENROUTER_API_KEY` | reflect.py / embed.py fallback; Echo Speaks LLM fallback |
 | `ANTHROPIC_API_KEY` | Echo Speaks (primary — preferred over OpenRouter) |
 | `UNSAFE_PYTHON_SANDBOX` | Echo Speaks execute_python tool (set "true" to enable; default false) |
-| `SPOTIFY_ZIP` | ingest.py — path to Spotify Extended Streaming History zip (default: `my_spotify_data.zip` in project root) |
+| `SPOTIFY_ZIP` | ingest.py — Spotify Extended Streaming History zip filename inside `_data/` (default: `my_spotify_data.zip`) |
 | `SPOTIFY_CLIENT_ID` | enrich_spotify.py (optional — Spotify API enrichment, Phase 2) |
 | `SPOTIFY_CLIENT_SECRET` | enrich_spotify.py (optional — Spotify API enrichment, Phase 2) |
 | `LANGFUSE_PUBLIC_KEY` | Echo Speaks observability (optional) |
@@ -56,19 +56,21 @@ ingest.py → enrich.py → detect.py → signals.py → reflect.py → embed.py
 python ingest.py
 ```
 
-Reads from zip files configured at the top of `ingest.py`:
+Reads from zip files in `_data/` (gitignored) — paths configured at the top of
+`ingest.py` via the `DATA_DIR` and `ZIP_*` constants:
 
-**YouTube / Google Takeout (3 files):**
-- `takeout-20260512T160253Z-4-001.zip` — YouTube Takeout
-- `takeout-20260512T160253Z-6-001.zip` — My Activity
-- `takeout-20260512T161750Z-3-001.zip` — Calendar + Timeline
+**YouTube / Google Takeout (3 files, in `_data/`):**
+- `takeout-<timestamp>-4-001.zip` — YouTube Takeout
+- `takeout-<timestamp>-6-001.zip` — My Activity
+- `takeout-<timestamp>-3-001.zip` — Calendar + Timeline
 
-**Spotify Extended Streaming History (1 file, optional):**
-- `my_spotify_data.zip` — default path, configurable via `SPOTIFY_ZIP` env var
+**Spotify Extended Streaming History (1 file, optional, in `_data/`):**
+- `my_spotify_data.zip` — default filename, configurable via `SPOTIFY_ZIP` env var
 
 Expected output: ~6,280 watches, ~469 searches, ~3,849 calendar events, ~16,678 Spotify plays.
 If the Spotify zip is absent, the loader prints a skip message and continues — YouTube data ingests normally.
-If adding new Takeout data, update the `ZIP_*` constants at the top of `ingest.py`.
+If adding new Takeout data, drop the zips into `_data/` and update the `ZIP_*`
+constants at the top of `ingest.py` to match the new filenames.
 
 ### Step 1b — Enrich Spotify (optional)
 
@@ -325,8 +327,8 @@ datasette echo.db
 ### New Spotify export
 
 1. Request a new Extended Streaming History export from Spotify account settings (takes ~30 days).
-2. Place the downloaded zip at the project root as `my_spotify_data.zip`,
-   or set `SPOTIFY_ZIP=/path/to/file.zip` in `.env`.
+2. Place the downloaded zip in `_data/` as `my_spotify_data.zip`, or set
+   `SPOTIFY_ZIP=<filename_inside_data_dir>.zip` in `.env`.
 3. Re-run `python ingest.py`. The UNIQUE constraint prevents duplicates — new plays are appended.
 
 The Spotify zip is auto-detected by file name pattern `Streaming_History_Audio_*.json` and

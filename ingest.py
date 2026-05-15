@@ -25,11 +25,15 @@ import sqlite_utils
 BASE = Path(__file__).parent
 DB_PATH = BASE / "echo.db"
 
-ZIP_YT       = BASE / "takeout-20260512T160253Z-4-001.zip"   # YouTube Takeout
-ZIP_ACTIVITY = BASE / "takeout-20260512T160253Z-6-001.zip"   # My Activity
-ZIP_CALENDAR = BASE / "takeout-20260512T161750Z-3-001.zip"   # Calendar
-# SPOTIFY_ZIP: place my_spotify_data.zip at project root, or override via env var
-ZIP_SPOTIFY  = BASE / os.environ.get("SPOTIFY_ZIP", "my_spotify_data.zip")
+# Raw source archives live in `_data/` (gitignored) — keeps the repo root tidy
+# and shields ~340MB of personal data from accidental `git add`. Replace these
+# filenames with whatever Google Takeout / Spotify named YOUR exports.
+DATA_DIR     = BASE / "_data"
+ZIP_YT       = DATA_DIR / "takeout-20260512T160253Z-4-001.zip"   # YouTube Takeout
+ZIP_ACTIVITY = DATA_DIR / "takeout-20260512T160253Z-6-001.zip"   # My Activity
+ZIP_CALENDAR = DATA_DIR / "takeout-20260512T161750Z-3-001.zip"   # Calendar
+# SPOTIFY_ZIP: place my_spotify_data.zip in _data/, or override via env var
+ZIP_SPOTIFY  = DATA_DIR / os.environ.get("SPOTIFY_ZIP", "my_spotify_data.zip")
 
 
 # ── Timestamp helpers ───────────────────────────────────────────────────────

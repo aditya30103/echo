@@ -60,9 +60,11 @@ Export your Google data from https://takeout.google.com — select:
 - YouTube and YouTube Music → History (watch history + search history)
 - (Optional) Google Search History
 
-Place the downloaded zip(s) in the project root. The expected filenames are whatever
-Google names them (e.g. `takeout-20240101-001.zip`). Edit `ingest.py` `ZIP_PATHS`
-if your filenames differ.
+Place the downloaded zip(s) in `_data/` at the project root (create it if missing —
+the directory is gitignored so your raw exports never get accidentally committed).
+The expected filenames are whatever Google names them (e.g. `takeout-20240101-001.zip`).
+Edit `ZIP_YT`, `ZIP_ACTIVITY`, `ZIP_CALENDAR` near the top of `ingest.py` to match
+your filenames.
 
 ### 4. Run the ingestion pipeline
 
