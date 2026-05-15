@@ -45,9 +45,10 @@ annotations:
   - start: "YYYY-MM-DD"
     end:   "YYYY-MM-DD"
     note: >
-      The calendar entries labelled "<label>" during this period are
-      <what they actually were> — e.g. "<actual context>, not <wrong inference>" —
-      because I used the same calendar label for two different commitments.
+      The calendar entries labelled "<label>" during this period are actually
+      <what they actually were> — because I used the same calendar label for
+      two different commitments. Without this note, reflect.py would
+      misattribute these events to <the wrong context>.
 
   # ── Example 3: a "this looks like X but is actually Y" correction ─────────
   - start: "YYYY-MM-DD"
