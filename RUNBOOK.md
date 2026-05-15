@@ -70,7 +70,28 @@ Expected output: ~6,280 watches, ~469 searches, ~3,849 calendar events, ~16,678 
 If the Spotify zip is absent, the loader prints a skip message and continues — YouTube data ingests normally.
 If adding new Takeout data, update the `ZIP_*` constants at the top of `ingest.py`.
 
-### Step 2 — Enrich
+### Step 1b — Enrich Spotify (optional)
+
+```bash
+python enrich_spotify.py               # enrich all 4,342 unique tracks
+python enrich_spotify.py --dry-run     # show pending count, no API calls
+python enrich_spotify.py --limit 100   # enrich first 100 (test run)
+```
+
+Requires `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env`.
+Create a free app at `developer.spotify.com/dashboard` (Client Credentials flow — no user login needed).
+
+Fetches in three passes:
+1. `/tracks` (50/batch) → duration_ms, popularity, explicit, artist URI
+2. `/artists` (50/batch) → genres (JSON array from primary artist)
+3. `/audio-features` (100/batch) → valence, energy, danceability, tempo, key, mode
+   — If your app was registered after November 2024, this returns 403. Those columns
+   will be NULL; all other metadata is still fetched and stored. Script continues safely.
+
+Safe to interrupt and re-run — already-enriched URIs are skipped.
+~4,342 unique tracks → ~90 batch calls → completes in ~3 minutes.
+
+### Step 2 — Enrich YouTube
 
 ```bash
 python enrich.py

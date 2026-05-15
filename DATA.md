@@ -183,6 +183,42 @@ One row per Spotify streaming event from Extended Streaming History.
 
 ---
 
+### `spotify_tracks`
+
+One row per unique `spotify_track_uri` — enriched metadata from the Spotify Web API.
+Populated by `enrich_spotify.py` (optional step, requires Spotify Developer app credentials).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| spotify_track_uri | TEXT PK | Same URI as in `spotify_plays.spotify_track_uri` |
+| track_name | TEXT | Track title from Spotify API |
+| artist_name | TEXT | Primary artist display name |
+| artist_uri | TEXT | Spotify URI for the primary artist (used internally to fetch genres) |
+| album_name | TEXT | Album name |
+| duration_ms | INTEGER | Track duration in milliseconds — **required for Phase 3 completion_ratio** |
+| popularity | INTEGER | 0–100 Spotify popularity score (based on recent stream counts globally) |
+| explicit | INTEGER | 1 = explicit content flag set by Spotify |
+| genres | TEXT | JSON array of genres from the primary artist, e.g. `["bollywood", "pop"]` |
+| valence | REAL | 0–1 musical positiveness (NULL if app registered after Nov 2024) |
+| energy | REAL | 0–1 perceptual intensity (NULL if app registered after Nov 2024) |
+| danceability | REAL | 0–1 danceability score (NULL if app registered after Nov 2024) |
+| tempo | REAL | Estimated BPM (NULL if app registered after Nov 2024) |
+| acousticness | REAL | 0–1 acoustic confidence (NULL if app registered after Nov 2024) |
+| instrumentalness | REAL | 0–1 vocal absence prediction (NULL if app registered after Nov 2024) |
+| loudness | REAL | Average loudness in dB, typically –60 to 0 (NULL if app registered after Nov 2024) |
+| speechiness | REAL | 0–1 spoken word presence (NULL if app registered after Nov 2024) |
+| mode | INTEGER | 1 = major key, 0 = minor key (NULL if app registered after Nov 2024) |
+| musical_key | INTEGER | Pitch class 0–11 (C=0, C#=1, …, B=11). Named `musical_key` to avoid SQLite reserved word `key`. (NULL if app registered after Nov 2024) |
+| audio_features_available | INTEGER | 1 = audio features were fetched; 0 = 403 returned (deprecated for this app) |
+| fetched_at | TEXT | UTC timestamp of enrichment |
+
+**Join to plays:** `spotify_tracks.spotify_track_uri = spotify_plays.spotify_track_uri`
+**Completion ratio:** `CAST(spotify_plays.ms_played AS REAL) / spotify_tracks.duration_ms` (clamp to 1.0 max — some plays slightly exceed duration due to buffering)
+**Genre analysis:** `json_each(genres)` to unnest the array in SQLite: `SELECT value FROM json_each(genres)`
+**Audio features:** NULL for apps registered after November 2024. `audio_features_available=0` marks these rows. Columns are kept in schema for forward compatibility.
+
+---
+
 ## Derived tables (populated by later pipeline stages)
 
 ### `chapters` (detect.py)
