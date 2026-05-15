@@ -12,6 +12,7 @@ Run:
 import csv
 import io
 import json
+import os
 import re
 import sys
 import zipfile
@@ -27,6 +28,8 @@ DB_PATH = BASE / "echo.db"
 ZIP_YT       = BASE / "takeout-20260512T160253Z-4-001.zip"   # YouTube Takeout
 ZIP_ACTIVITY = BASE / "takeout-20260512T160253Z-6-001.zip"   # My Activity
 ZIP_CALENDAR = BASE / "takeout-20260512T161750Z-3-001.zip"   # Calendar
+# SPOTIFY_ZIP: place my_spotify_data.zip at project root, or override via env var
+ZIP_SPOTIFY  = BASE / os.environ.get("SPOTIFY_ZIP", "my_spotify_data.zip")
 
 
 # ── Timestamp helpers ───────────────────────────────────────────────────────
@@ -157,6 +160,33 @@ def init_schema(db: sqlite_utils.Database):
             model        TEXT,
             created_at   TEXT DEFAULT (datetime('now'))
         );
+
+        -- Populated by ingest.py (Spotify Extended Streaming History)
+        CREATE TABLE IF NOT EXISTS spotify_plays (
+            id                   INTEGER PRIMARY KEY,
+            ts                   TEXT    NOT NULL,
+            ms_played            INTEGER NOT NULL DEFAULT 0,
+            track_name           TEXT,
+            artist_name          TEXT,
+            album_name           TEXT,
+            spotify_track_uri    TEXT,
+            episode_name         TEXT,
+            episode_show_name    TEXT,
+            spotify_episode_uri  TEXT,
+            reason_start         TEXT,
+            reason_end           TEXT,
+            shuffle              INTEGER NOT NULL DEFAULT 0,
+            skipped              INTEGER NOT NULL DEFAULT 0,
+            offline              INTEGER NOT NULL DEFAULT 0,
+            incognito_mode       INTEGER NOT NULL DEFAULT 0,
+            platform             TEXT,
+            conn_country         TEXT,
+            content_type         TEXT    NOT NULL,
+            source_file          TEXT
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_spotify_plays
+            ON spotify_plays(ts, COALESCE(spotify_track_uri, spotify_episode_uri, ''));
 
         CREATE INDEX IF NOT EXISTS idx_watches_time    ON watches(watched_at);
         CREATE INDEX IF NOT EXISTS idx_watches_video   ON watches(video_id);
@@ -382,6 +412,79 @@ def load_transactions(db, entries: list) -> int:
     return db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] - before
 
 
+# ── Spotify loader ───────────────────────────────────────────────────────────
+def load_spotify(db, zip_path: Path = ZIP_SPOTIFY) -> tuple[int, int]:
+    """Ingest Spotify Extended Streaming History from zip file.
+
+    Reads all Streaming_History_Audio_*.json and Streaming_History_Video_*.json.
+    Idempotent: UNIQUE(ts, spotify_track_uri|episode_uri) deduplicates across
+    re-runs and across overlapping year files (e.g. Audio_2024 and Audio_2025
+    share late-December 2024 records).
+
+    Timestamps normalized to +00:00 suffix (same as watches.watched_at) so all
+    cross-table time comparisons work correctly as strings.
+
+    Returns (inserted, already_existed).
+    """
+    if not zip_path.exists():
+        print(f"      [skip] {zip_path.name} not found — place it at project root "
+              f"or set SPOTIFY_ZIP env var")
+        return 0, 0
+
+    rows = []
+    with zipfile.ZipFile(zip_path) as zf:
+        history_files = sorted(
+            n for n in zf.namelist()
+            if ("Streaming_History_Audio_" in n or "Streaming_History_Video_" in n)
+            and n.endswith(".json")
+        )
+        for fname in history_files:
+            with zf.open(fname) as f:
+                records = json.load(f)
+            source = Path(fname).name
+            for r in records:
+                if r.get("master_metadata_track_name"):
+                    content_type = "track"
+                elif r.get("episode_name"):
+                    content_type = "episode"
+                elif r.get("audiobook_title"):
+                    content_type = "audiobook"
+                else:
+                    content_type = "unknown"
+
+                # Normalize platform: first word, lowercase, "web_player" -> "web"
+                platform_raw = (r.get("platform") or "").split()[0].lower()
+                platform = "web" if platform_raw == "web_player" else platform_raw or None
+
+                rows.append({
+                    "ts":                  to_utc(r.get("ts", "")),
+                    "ms_played":           int(r.get("ms_played") or 0),
+                    "track_name":          r.get("master_metadata_track_name"),
+                    "artist_name":         r.get("master_metadata_album_artist_name"),
+                    "album_name":          r.get("master_metadata_album_album_name"),
+                    "spotify_track_uri":   r.get("spotify_track_uri"),
+                    "episode_name":        r.get("episode_name"),
+                    "episode_show_name":   r.get("episode_show_name"),
+                    "spotify_episode_uri": r.get("spotify_episode_uri"),
+                    "reason_start":        r.get("reason_start"),
+                    "reason_end":          r.get("reason_end"),
+                    "shuffle":             int(bool(r.get("shuffle"))),
+                    "skipped":             int(bool(r.get("skipped"))),
+                    "offline":             int(bool(r.get("offline"))),
+                    "incognito_mode":      int(bool(r.get("incognito_mode"))),
+                    "platform":            platform,
+                    "conn_country":        r.get("conn_country"),
+                    "content_type":        content_type,
+                    "source_file":         source,
+                })
+
+    before = db.execute("SELECT COUNT(*) FROM spotify_plays").fetchone()[0]
+    db["spotify_plays"].insert_all(rows, ignore=True)
+    after  = db.execute("SELECT COUNT(*) FROM spotify_plays").fetchone()[0]
+    inserted = after - before
+    return inserted, len(rows) - inserted
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -392,7 +495,7 @@ def main():
     print("Schema ready.\n")
 
     # 1. Watches — My Activity YouTube (primary: widest coverage, 2016-2026)
-    print("[1/8] Watches: My Activity YouTube")
+    print("[1/9] Watches: My Activity YouTube")
     with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
         with zf.open("Takeout/My Activity/YouTube/MyActivity.json") as f:
             entries = json.load(f)
@@ -400,7 +503,7 @@ def main():
     print(f"      +{ins} inserted | {ads} ads dropped | {noid} no video ID")
 
     # 2. Watches — YouTube Takeout (supplements; UNIQUE constraint deduplicates)
-    print("[2/8] Watches: YouTube Takeout")
+    print("[2/9] Watches: YouTube Takeout")
     with zipfile.ZipFile(ZIP_YT) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/history/watch-history.json") as f:
             entries = json.load(f)
@@ -410,7 +513,7 @@ def main():
     print(f"      Total unique watches: {total:,}\n")
 
     # 3. YouTube searches
-    print("[3/8] YouTube searches")
+    print("[3/9] YouTube searches")
     with zipfile.ZipFile(ZIP_YT) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/history/search-history.json") as f:
             entries = json.load(f)
@@ -418,7 +521,7 @@ def main():
     print(f"      +{ins} queries\n")
 
     # 4. Watch Later
-    print("[4/8] Watch Later")
+    print("[4/9] Watch Later")
     with zipfile.ZipFile(ZIP_YT) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/playlists/Watch later-videos.csv") as f:
             content = f.read().decode("utf-8", errors="replace")
@@ -426,7 +529,7 @@ def main():
     print(f"      +{ins} bookmarks\n")
 
     # 5. Google searches
-    print("[5/8] Google searches")
+    print("[5/9] Google searches")
     with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
         with zf.open("Takeout/My Activity/Search/MyActivity.json") as f:
             entries = json.load(f)
@@ -434,7 +537,7 @@ def main():
     print(f"      +{ins} queries\n")
 
     # 6. Discover feed
-    print("[6/8] Discover feed snapshots")
+    print("[6/9] Discover feed snapshots")
     with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
         with zf.open("Takeout/My Activity/Discover/MyActivity.json") as f:
             entries = json.load(f)
@@ -442,7 +545,7 @@ def main():
     print(f"      +{ins} daily snapshots\n")
 
     # 7. Calendar events
-    print("[7/8] Calendar events")
+    print("[7/9] Calendar events")
     cal_total = 0
     with zipfile.ZipFile(ZIP_CALENDAR) as zf:
         for path in sorted(n for n in zf.namelist() if n.endswith(".ics")):
@@ -455,12 +558,21 @@ def main():
     print(f"      Total: {cal_total:,} events\n")
 
     # 8. Google Pay transactions
-    print("[8/8] Google Pay transactions")
+    print("[8/9] Google Pay transactions")
     with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
         with zf.open("Takeout/My Activity/Google Pay/MyActivity.json") as f:
             entries = json.load(f)
     ins = load_transactions(db, entries)
     print(f"      +{ins} transactions\n")
+
+    # 9. Spotify Extended Streaming History
+    print("[9/9] Spotify Extended Streaming History")
+    ins, dup = load_spotify(db)
+    if ins + dup > 0:
+        total_sp = db.execute("SELECT COUNT(*) FROM spotify_plays").fetchone()[0]
+        print(f"      +{ins:,} inserted | {dup:,} already existed | {total_sp:,} total\n")
+    else:
+        print()
 
     # ── Summary ──────────────────────────────────────────────────────────────
     print("=" * 54)
@@ -470,6 +582,7 @@ def main():
         "watches", "yt_searches", "watch_later", "google_searches",
         "discover_feed", "calendar_events", "transactions",
         "chapters", "chapter_fingerprints", "watch_signals", "reflections",
+        "spotify_plays",
     ]
     for t in tables:
         n = db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]

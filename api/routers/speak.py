@@ -39,6 +39,7 @@ _SCHEMA_TABLES = [
     "google_searches", "yt_searches",
     "chapters", "chapter_fingerprints", "reflections",
     "calendar_events", "transactions",
+    "spotify_plays",
 ]
 
 # ── Langfuse-managed instruction template ─────────────────────────────────────
@@ -159,6 +160,49 @@ GROUP BY ws.session_id ORDER BY depth DESC LIMIT 20
 -- Google search volume by month
 SELECT strftime('%Y-%m', searched_at) month, COUNT(*) n
 FROM google_searches GROUP BY month ORDER BY month
+
+## Spotify data (spotify_plays table)
+Timestamps: ts column is UTC ISO-8601 with +00:00 suffix — same as watches.watched_at.
+IST hour of play:
+  CAST(strftime('%H', datetime(ts, '+330 minutes')) AS INTEGER)
+
+reason_start semantics:
+  'trackdone'           = natural album/playlist flow (algorithm-driven)
+  'clickrow' / 'playbtn' = user explicitly chose this track (intentional)
+  'fwdbtn'              = user skipped forward (not interested in previous)
+  'backbtn'             = user went back (replaying)
+  'appload' / 'remote'  = app resumed or remote control
+
+Key behavioral flags:
+  skipped = 1           = user skipped before track ended
+  shuffle = 1           = shuffle mode was active
+  prior plays of a track = use COUNT(*) WHERE spotify_track_uri = X AND ts < current_ts
+
+Cross-modal join (Spotify + YouTube same week):
+  SELECT strftime('%Y-%W', datetime(sp.ts, '+330 minutes')) AS week,
+         COUNT(DISTINCT sp.id) AS spotify_plays,
+         COUNT(DISTINCT w.id) AS yt_watches
+  FROM spotify_plays sp
+  LEFT JOIN watches w
+    ON strftime('%Y-%W', datetime(sp.ts, '+330 minutes'))
+     = strftime('%Y-%W', datetime(w.watched_at, '+330 minutes'))
+  GROUP BY week ORDER BY week
+
+-- Top artists by play count
+SELECT artist_name, COUNT(*) n, SUM(ms_played)/3600000.0 hrs
+FROM spotify_plays WHERE content_type='track'
+GROUP BY artist_name ORDER BY n DESC LIMIT 20
+
+-- Listening volume by year (IST)
+SELECT strftime('%Y', datetime(ts, '+330 minutes')) yr,
+       COUNT(*) plays, ROUND(SUM(ms_played)/3600000.0,1) hours
+FROM spotify_plays GROUP BY yr ORDER BY yr
+
+-- Skip rate by artist
+SELECT artist_name, COUNT(*) plays, ROUND(100.0*SUM(skipped)/COUNT(*),1) skip_pct
+FROM spotify_plays WHERE content_type='track'
+GROUP BY artist_name HAVING COUNT(*) >= 10
+ORDER BY skip_pct DESC LIMIT 20
 """
 
 

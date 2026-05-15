@@ -117,6 +117,11 @@ At the start of any session:
   agent. Default is `false` — the tool returns an error string, not an exception.
 - Agent Phase 1 (rounds 1–10) blocks the `reflections` lancedb table in both `vector_search`
   dispatch and `run_sql` (reflections table check). This is intentional narrative blindness.
+- `spotify_plays.ts` timestamp normalization: raw Spotify data uses `Z` suffix
+  (`"2025-05-07T10:00:00Z"`); all other echo.db timestamps use `+00:00` suffix. `Z` (ASCII 90)
+  sorts AFTER `+00:00` in string comparison, silently breaking cross-table timestamp comparisons.
+  Always normalize on ingest: `ts = row["ts"].replace("Z", "+00:00")`. SQLite strftime/datetime
+  handle both formats identically — the normalization is for string-comparison safety only.
 
 ---
 

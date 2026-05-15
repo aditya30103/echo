@@ -145,6 +145,44 @@ Google Pay sent/received amounts from My Activity Takeout.
 
 ---
 
+### `spotify_plays`
+
+One row per Spotify streaming event from Extended Streaming History.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-assigned |
+| ts | TEXT | UTC ISO-8601 timestamp (`+00:00` suffix — normalised from Spotify's `Z` on ingest) |
+| ms_played | INTEGER | Milliseconds played. 0 = skipped before any audio. Not normalized by track duration — use with `spotify_tracks.duration_ms` for completion ratio. |
+| track_name | TEXT | Track title (NULL for episodes/audiobooks) |
+| artist_name | TEXT | Album artist name (NULL for episodes/audiobooks) |
+| album_name | TEXT | Album name (NULL for episodes/audiobooks) |
+| spotify_track_uri | TEXT | Spotify URI, e.g. `spotify:track:...` (NULL for non-tracks) |
+| episode_name | TEXT | Podcast episode title (NULL for tracks/audiobooks) |
+| episode_show_name | TEXT | Podcast show name (NULL for tracks/audiobooks) |
+| spotify_episode_uri | TEXT | Spotify URI for the episode (NULL for non-episodes) |
+| reason_start | TEXT | Why playback started: `trackdone` (prev finished), `clickrow`/`playbtn` (manual), `fwdbtn`/`backbtn` (skip), `appload`/`remote` (app launch or remote control) |
+| reason_end | TEXT | Why playback ended: `trackdone` (finished), `fwdbtn`/`backbtn` (skipped), `logout`, `endplay`, `remote` |
+| shuffle | INTEGER | 1 = shuffle was active when this play started |
+| skipped | INTEGER | 1 = Spotify internally marked this play as skipped (< ~50% played, forward-skipped) |
+| offline | INTEGER | 1 = played from offline cache |
+| incognito_mode | INTEGER | 1 = private session (not counted in Spotify stats) |
+| platform | TEXT | Normalised platform: `android`, `ios`, `windows`, `macos`, `web`, `chromecast`, `speaker`, etc. First word of raw platform string, lowercased; `web_player` → `web`. |
+| conn_country | TEXT | 2-letter ISO country code where the play occurred (e.g. `IN`) |
+| content_type | TEXT | `track` / `episode` / `audiobook` / `unknown` — detected from which metadata fields are non-null |
+| source_file | TEXT | Which JSON file this row came from (e.g. `Streaming_History_Audio_2025.json`) |
+
+**Coverage:** All available Extended Streaming History. 16,678 plays across all history files.
+**Dedup:** `UNIQUE(ts, COALESCE(spotify_track_uri, spotify_episode_uri, ''))` — safe to re-run and handles overlap between year files (Audio_2024 and Audio_2025 share late December 2024).
+**Timestamp:** Normalised from Spotify's `Z` suffix to `+00:00` on ingest. Cross-table string comparison with `watches.watched_at` and other tables is safe. SQLite `strftime()`/`datetime()` handle both formats identically — the normalisation is for string-sort safety only.
+**IST hour:** `strftime('%H', datetime(ts, '+330 minutes'))` — same pattern as all other tables.
+**Skip detection:** `skipped=1` is Spotify's own flag (forward-skip, incomplete play). `reason_end='fwdbtn'` is a superset that also includes backward-skip. Both are independent of `ms_played`.
+**Repeat detection:** Same `(ts, spotify_track_uri)` pair cannot recur (UNIQUE constraint). Repeated listens to the same track appear as distinct rows with different `ts`.
+**Duration data absent:** `ms_played` is raw play time, but track duration (`duration_ms`) is not in the streaming export. Completion ratio requires joining `spotify_tracks` (populated by the optional `enrich_spotify.py` step).
+**Cross-modal JOIN:** To align Spotify plays with YouTube watches by IST week: `strftime('%Y-%W', datetime(ts, '+330 minutes'))` on `spotify_plays` equals `strftime('%Y-%W', datetime(watched_at, '+330 minutes'))` on `watches`.
+
+---
+
 ## Derived tables (populated by later pipeline stages)
 
 ### `chapters` (detect.py)
@@ -360,3 +398,4 @@ Signal is z-score normalised per-dimension before PELT.
 - **Median video duration:** 5m 44s
 - **Sessions:** 1,928 total; 865 solo (1 video), 420 long (5+ videos)
 - **Most rewatched:** Anuv Jain - INAAM (11x)
+- **Spotify plays:** 16,678 total across all Extended Streaming History files
