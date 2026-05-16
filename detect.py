@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 """
-Echo Layer 2 — PELT changepoint detection.
+Echo Layer 2 — PELT changepoint detection over weekly viewing signals.
+
+Aggregates watches into weekly ratios across multiple behavioral dimensions,
+z-score normalises each dimension, then runs PELT (Pruned Exact Linear Time
+from the `ruptures` library) to find changepoints that segment the timeline
+into coherent chapters. Each chapter then gets a fingerprint summarising its
+shape (top categories, modal hour, night ratio, etc.).
+
+Inputs:  watches, video_metadata (echo.db)
+Outputs: chapters, chapter_fingerprints (echo.db)
 
 Signal dimensions (all per-week ratios, z-score normalised before PELT):
-  [night_ratio, long_form_ratio, education_r, news_politics_r,
-   science_tech_r, sports_r, people_blogs_r]
+  [night_ratio, shorts_ratio, long_form_ratio,
+   education_r, news_politics_r, science_tech_r, sports_r, people_blogs_r]
 
-Sparse weeks (<MIN_WATCHES) are linearly interpolated from neighbours.
-Detects changepoints and writes chapters + chapter_fingerprints to echo.db.
+Sparse weeks (<MIN_WATCHES) are linearly interpolated from neighbours so
+single-video weeks don't masquerade as behavioral shifts.
+
+Idempotency: drops and recomputes both output tables on every run. Tune
+--penalty freely without polluting the DB.
+
+Cost: zero (no API calls, pure compute). Runtime: <2s.
 
 Usage:
     python detect.py                 # default penalty=3
-    python detect.py --penalty 5     # tune: lower = more chapters
+    python detect.py --penalty 5     # tune: higher = fewer chapters
     python detect.py --plot          # save weekly_signal.png
     python detect.py --dry-run       # print chapters, don't write to DB
 """
