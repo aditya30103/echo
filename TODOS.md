@@ -5,52 +5,11 @@ pick up without re-reading the session that produced it.
 
 ---
 
-## TODO: SHIP-BLOCKER — Phase 2 history rewrite (scrub personal data from git history)
+## TODO: Phase 2 history rewrite — completion notes (kept for traceability)
 
-**What:** Use `git-filter-repo` to remove the historical biographical `annotations.yaml`
-and replace personal phrases in `metadata.yaml` blob content across all 53 commits.
-
-**Why:** Phase 1 (commits `90cfcc2` + `f7fb270` on 2026-05-16) sanitized the CURRENT
-tree — moved `annotations.yaml` to gitignored `private/`, created `.example` template,
-sanitized `metadata.yaml` descriptions. But `git log -p annotations.yaml` still shows
-the full biography (prior personal biography) from
-commits `37975f5` (added the system) and `da7221f` (added the full biographical timeline).
-And `git show 916980e:metadata.yaml` still shows <personal channel and year refs
-Mayya", "<label> calendar" references. Anyone cloning the repo can recover this via
-`git log` / `git show`. **This is a SHIP-BLOCKER for public release.**
-
-**Approach (next session):**
-1. Backup: `git branch backup-before-history-rewrite`
-2. Install: `pip install git-filter-repo`
-3. Scrub the file entirely: `git filter-repo --path annotations.yaml --invert-paths`
-4. Replace personal strings in metadata.yaml history: prepare `replacements.txt`:
-   ```
-   Try a year that matters to you.==>Try a year that matters to you.
-   Try a channel name from your top channels.==>Try a channel name from your top channels.
-   All events from a single calendar.==>All events from a single calendar.
-   "Single Calendar View"==>"Single Calendar View"
-   all your calendars==>all your calendars
-   Google Pay spending patterns by month.==>Google Pay spending patterns by month.
-   ```
-   Run: `git filter-repo --replace-text replacements.txt`
-5. **Also consider:** scrub the hardcoded Takeout filename timestamps (`takeout-20260512T*`)
-   in `ingest.py` history — minor exposure (export date), but tidies up. Decide whether to
-   pull this into Phase 2 or defer to Step 1.
-6. Verify: `git log -p annotations.yaml` returns empty; `git log -p metadata.yaml` shows
-   sanitized phrases only; `git log --oneline | wc -l` still shows 53 (or close to it —
-   commits-that-only-touched-annotations.yaml will be dropped).
-7. All 53 commit SHAs change. Local-only impact (no remote configured). Design docs and
-   checkpoints at `~/.gstack/projects/Echo/` that reference old SHAs (`854129b`, `3e53091`,
-   etc.) become orphans — acceptable since they're historical session artifacts.
-
-**Pros:** Zero personal data in git history. Repo is genuinely shippable.
-
-**Cons:** Destructive. Old SHAs (referenced in CLAUDE.md, design docs, checkpoints) no
-longer resolve. ~20-30 min careful work. If git-filter-repo install fails on Windows,
-fall back to BFG Repo-Cleaner (Java).
-
-**Blocked by:** Nothing technical. Just needs a fresh, careful session — user explicitly
-chose to defer rather than rush at the end of a long session (2026-05-16).
+**Status:** Executed 2026-05-16. See git-filter-repo run history. Mainline
+master no longer contains personal biographical content in `annotations.yaml`
+or `metadata.yaml`. See Step 0 design doc for full context.
 
 **Source:** Step 0 of the release-prep cleanup design at
 `~/.gstack/projects/Echo/Aditya Arya-master-design-release-prep-20260516.md`.
