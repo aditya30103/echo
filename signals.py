@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 """
-Echo signals — per-watch engagement scoring.
+Echo signals — per-watch and per-Spotify-play engagement scoring.
 
-Computes watch_signals: session membership, rewatch detection,
-search-driven detection, autoplay proxy, bookmark status.
+Computes behavioral signals that can't be derived from a single row alone:
+session membership (time-gap grouping), search-driven detection (did a
+yt_search precede this watch?), autoplay proxy (same-channel within 3 min),
+rewatch detection, and bookmark status. Spotify gets analogous treatment
+using reason_start codes (clickrow/playbtn = intentional, trackdone =
+passive, fwdbtn/backbtn = seek, etc.).
 
-Safe to re-run (drops and recomputes from scratch).
+Inputs:  watches, yt_searches, watch_later, spotify_plays (echo.db)
+Outputs: watch_signals, spotify_signals (echo.db)
+
+Idempotency: drops and recomputes both tables on every run. Tune the
+SESSION_GAP_MIN / SEARCH_WIN_MIN / AUTOPLAY_GAP_MIN constants near the
+top of the file and re-run — no risk of stale state.
+
+Cost: zero (no API calls, pure compute). Runtime: <5s.
 
 Run:
     python signals.py
