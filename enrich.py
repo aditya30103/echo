@@ -2,9 +2,24 @@
 """
 Echo enrichment — YouTube Data API v3.
 
-Fetches category, duration, and tags for every video in the watches table.
-Persistent cache in video_metadata — never re-fetches a known video ID.
-Safe to interrupt and re-run; picks up where it left off.
+Fetches category, duration, and tags for every distinct video_id in the
+watches table. video_metadata acts as a persistent cache — already-fetched
+IDs are skipped, so this script is safe to interrupt at any time.
+
+Inputs:  watches (echo.db)
+Outputs: video_metadata (echo.db)
+
+Idempotency: keyed by video_id. Re-running spends no quota on already
+enriched videos. Add a new Takeout, re-run ingest.py, re-run enrich.py
+— only the new video_ids hit the API.
+
+External deps: YOUTUBE_API_KEY in .env (or --key argument).
+Get one free at: https://console.cloud.google.com/apis/credentials
+
+Quota: 10,000 units / day on the free tier. `videos.list` costs 1 unit per
+50 videos returned, so ~120 units enriches ~6,000 watches. On HTTP 403
+quotaExceeded the script exits cleanly with a message — re-run after the
+midnight Pacific reset.
 
 Usage:
     $env:YOUTUBE_API_KEY = "YOUR_KEY"
