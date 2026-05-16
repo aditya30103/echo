@@ -1,23 +1,40 @@
 #!/usr/bin/env python3
 """
-Echo Layer 4 — Semantic embeddings.
+Echo Layer 4 — Semantic embeddings into LanceDB.
 
-Embeds three corpora and stores them in a local lancedb database:
-  - reflections  : 16 chapter narratives (for arc-level semantic search)
-  - videos       : unique video titles + channel (for content-level search)
-  - searches     : unique YouTube search queries (for intent-level search)
+Embeds four corpora (see ALL_TABLES in embed_common.py) into a local
+LanceDB at ./lancedb/. The agent's `vector_search` tool reads from these
+tables — a stale lancedb is the most common reason recent reflections
+or new searches are missing from agent answers.
 
-Model: text-embedding-3-small (1536 dims, via OpenAI or OpenRouter)
-Store: ./lancedb/   (local, gitignored — regenerable from echo.db)
+Corpora:
+  - reflections     : chapter narratives (for arc-level semantic search)
+  - videos          : unique video titles + channel (for content-level search)
+  - searches        : unique YouTube search queries (for intent-level search)
+  - google_searches : unique Google search queries (cross-platform intent)
+
+Inputs:  reflections, watches+video_metadata, yt_searches, google_searches
+         (echo.db)
+Outputs: ./lancedb/ — 4 tables, each with text + a 1536-dim vector column
+
+Model: text-embedding-3-small (1536 dims), via OpenAI direct or OpenRouter
+(provider chosen by embed_common.get_embed_client).
+
+Idempotency: drops and recreates each LanceDB table on every run. The
+underlying ./lancedb/ directory is gitignored and fully regenerable
+from echo.db, so blowing it away is safe.
+
+Cost: ~$0.001-0.02 for a typical full embed run. text-embedding-3-small
+is ~$0.02 per 1M tokens; ~10k texts × ~50 tokens each ≈ 500k tokens =
+~$0.01 per full re-embed of the default 4 corpora.
 
 Usage:
-    python embed.py              # embed all three tables
+    python embed.py              # embed all four tables
     python embed.py --dry-run    # show counts and sample texts, no API calls
     python embed.py --table reflections   # embed one table only
     python embed.py --table videos
     python embed.py --table searches
-
-Idempotent: drops and recreates each table on every run.
+    python embed.py --table google_searches
 """
 
 import argparse
