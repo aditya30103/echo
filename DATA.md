@@ -141,7 +141,8 @@ Google Pay sent/received amounts from My Activity Takeout.
 | direction | TEXT | `'sent'` or `'received'` |
 | transacted_at | TEXT | UTC ISO-8601 timestamp |
 
-**Coverage:** depends on your Google Pay activity history.
+**Coverage:** depends on the dates Google Pay was your primary payment app
+(activity is only exported as long as it was being recorded).
 
 ---
 
