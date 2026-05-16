@@ -5,11 +5,33 @@ pick up without re-reading the session that produced it.
 
 ---
 
-## TODO: Phase 2 history rewrite — completion notes (kept for traceability)
+## NOTE: Phase 2 history rewrite — completion summary
 
-**Status:** Executed 2026-05-16. See git-filter-repo run history. Mainline
-master no longer contains personal biographical content in `annotations.yaml`
-or `metadata.yaml`. See Step 0 design doc for full context.
+**Status:** Executed 2026-05-16 via 4 git-filter-repo passes on master only.
+All 58 commit SHAs changed. Backup branch `backup-before-history-rewrite`
+preserves the pre-rewrite state at original SHA `00ea0bd`. External `.git`
+snapshot at `../Echo-git-backup-20260516/` (2.6MB) as second-layer safety.
+
+**What was scrubbed from master history:**
+- `annotations.yaml` (full biographical timeline) — file removed entirely
+- `metadata.yaml` personal phrases (year/channel/calendar refs from initial commit)
+- DATA.md transaction date range and count
+- Phase 1 commit message and TODOS.md content that inadvertently re-leaked the
+  same biography while documenting the cleanup
+
+**Intentionally kept (per user decision, on-brand for explicitly-Indian-student project):**
+- `JEE Advanced` example queries in `api/tools/__init__.py` and `ui/.../+page.svelte`
+- Residual `[McK]` calendar label references in older commit content (McK is just
+  a calendar label name; McKinsey appears only as disambiguation)
+- "Indian student, ages 13-23" framing in README/CLAUDE.md (load-bearing context)
+
+**Before pushing to a public GitHub remote:**
+1. Verify `git remote -v` shows the intended public remote (currently no remote configured)
+2. Push ONLY master: `git push -u origin master` (do NOT push backup branch or worktree branch)
+3. Delete `backup-before-history-rewrite` after first successful clone-and-verify by a
+   friend (or keep it forever; it never reaches the public repo unless explicitly pushed)
+4. Optionally `git gc --prune=now --aggressive` to remove unreachable objects locally
+   (only relevant after deleting the backup branch)
 
 **Source:** Step 0 of the release-prep cleanup design at
 `~/.gstack/projects/Echo/Aditya Arya-master-design-release-prep-20260516.md`.
