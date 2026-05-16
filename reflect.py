@@ -2,11 +2,26 @@
 """
 Echo Layer 3 — GPT-4o narrative reflection.
 
-For each chapter, assembles rich context (fingerprint, top videos, searches,
-calendar, watch signals) and asks GPT-4o to reflect on what that period of
-life looks like through the lens of YouTube.
+For each chapter (or the full arc as autobiography), assembles rich context
+(fingerprint, top videos, searches, calendar events, watch_signals, and
+LIFE CONTEXT pulled from private/annotations.yaml when present) and asks
+GPT-4o to write a 200-300 word reflection on what that period of life
+looks like through the lens of YouTube.
 
-Writes reflections to the `reflections` table in echo.db.
+Inputs:  chapters, chapter_fingerprints, watches, video_metadata,
+         yt_searches, calendar_events, watch_signals (echo.db)
+         + private/annotations.yaml (optional — LIFE CONTEXT injection)
+Outputs: reflections table (appended; kind='chapter' or 'autobiography')
+
+Idempotency: APPENDS — re-running adds new rows rather than replacing
+existing ones. Use viewer.py to inspect what's been generated and DELETE
+manually if you want a clean re-run.
+
+Cost: ~$0.05-0.30 per full chapter pass (~16 chapters, GPT-4o pricing on
+the assembled chapter prompts). The --autobiography pass is one larger
+call (~$0.05). ALWAYS preview with --dry-run before a live run — it
+prints the assembled prompts without spending tokens, so you can see
+what GPT-4o would actually receive.
 
 Usage:
     python reflect.py --dry-run           # print prompts, no API call
