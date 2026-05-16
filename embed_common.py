@@ -1,7 +1,20 @@
 """
-Shared utilities for embed.py and query.py.
+Shared utilities for embed.py and Spotify enrichment.
 
-Single source of truth for provider selection, model names, and table list.
+Single source of truth for embedding provider selection, model names, and
+the canonical ALL_TABLES list. Currently imported by:
+  - embed.py            : full embedding pipeline + ALL_TABLES + get_embed_client
+  - enrich_spotify.py   : load_env (DRY-up of the env-loading helper)
+
+Provider priority: OPENAI_API_KEY (direct) -> OPENROUTER_API_KEY
+(via OpenAI-compatible base_url). Model is text-embedding-3-small (1536
+dims) in both cases — OpenRouter just prefixes the model name with
+'openai/'.
+
+load_env() is intentionally simple: parses .env line-by-line into
+os.environ.setdefault, so it never overrides values already set by the
+shell. Drop-in alternative to python-dotenv for scripts that already
+import this module.
 """
 
 import os
