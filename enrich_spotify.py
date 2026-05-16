@@ -10,10 +10,25 @@ Batch endpoints (/tracks, /artists) and audio features (/audio-features) are
 all restricted for new apps. See DATA.md for the full column-level notes.
 
 Search approach: query "track:{name} artist:{artist}" and verify that the
-returned URI matches the URI we already have in spotify_plays. Mismatches are
-flagged (uri_verified=0) but duration_ms is still stored.
+returned URI matches the URI we already have in spotify_plays. Mismatches
+are flagged (uri_verified=0) but duration_ms is still stored.
 
-Safe to interrupt and re-run: already-enriched URIs are skipped.
+Inputs:  spotify_plays (echo.db) — distinct spotify_track_uri values
+Outputs: spotify_tracks (echo.db) — duration_ms, explicit, uri_verified,
+         track_name, artist_name
+
+Idempotency: keyed by spotify_track_uri. Already-enriched URIs are skipped;
+safe to interrupt at any time and re-run later. Use --limit to test on a
+small slice first.
+
+External deps: SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET in .env
+(Client Credentials flow — no user login needed). Register a free app
+at https://developer.spotify.com/dashboard.
+
+Quota: Spotify enforces a rolling per-app daily limit (not strictly
+documented). SLEEP_SEC is set at 1.0s between requests; a full enrich
+of ~4k tracks takes ~70 min. If Retry-After exceeds MAX_RETRY_WAIT_SEC
+(120s) the script aborts cleanly — re-run later or rotate Client ID.
 
 Usage:
     python enrich_spotify.py               # enrich all pending tracks
