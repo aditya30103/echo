@@ -38,6 +38,42 @@ snapshot at `../Echo-git-backup-20260516/` (2.6MB) as second-layer safety.
 
 ---
 
+## TODO: Echo Speaks context mgmt — Layers 2 & 3 (deferred design reviews)
+
+**What:** Layer 0 (housekeeping) and Layer 1 (per-tool structured compression in
+`api/tools/compressors.py`) shipped 2026-05-15. Layers 2 (heuristic scratchpad)
+and 3 (Haiku-driven summarization for runs > 25 rounds) remain deferred.
+
+**Why deferred:** Layer 1 produced a ~22% cost increase but expanded temporal
+coverage dramatically (A/B test confirmed). Production use of Layer 1 alone may
+be sufficient; commission Layer 2/3 design reviews only if real-world findings
+still feel fragmentary or shallow over a few weeks of use.
+
+**Approach when commissioned:** Each gets its own `/plan-eng-review`. Layer 2
+keeps a structured scratchpad of confirmed findings the agent maintains across
+rounds. Layer 3 fires Haiku summarization on history older than N rounds.
+
+**Blocked by:** Real-world signal. Live with Layer 1 first.
+
+---
+
+## TODO: DeepSeek / Ollama routing in api/llm.py
+
+**What:** Add DeepSeek (cloud) or Ollama (local) model slug to `api/llm.py`,
+pointing at the local Ollama server via `OPENROUTER_BASE_URL` (or a new
+`OLLAMA_BASE_URL`). Same interface as the current OpenRouter path.
+
+**Why:** Cheap local inference for development iteration and offline use.
+Useful for cost-bounded experimentation that doesn't need Claude / GPT-4o
+quality.
+
+**Cons:** Quality gap on multi-step ReAct loops. Local models often loop
+or fail to follow the structured Action/Thought format.
+
+**Blocked by:** Nothing technical. Low urgency.
+
+---
+
 ## TODO: Validate finding_index in /api/speak/score-finding
 
 **What:** Check that `finding_index` is in range `[0, len(findings) - 1]` for the given trace.
