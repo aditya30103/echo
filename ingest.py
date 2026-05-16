@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
 """
-Echo ingestion pipeline.
+Echo Layer 1 — Takeout + Spotify ingestion into echo.db.
 
-Reads all collected data sources from zip files and loads them into echo.db.
-Idempotent — safe to re-run. Deduplication is enforced by UNIQUE constraints.
+The first stage in the pipeline. Reads raw archive files from `_data/` and
+writes one row per source event into typed SQLite tables. Every later
+script reads what ingest.py wrote — nothing depends on a later stage.
+
+Inputs (all in _data/, paths configurable near the top of the file):
+    YouTube Takeout zip      -> watches, yt_searches, watch_later
+    Google My Activity zip   -> google_searches, discover_feed
+    Calendar Takeout zip     -> calendar_events
+    Spotify Extended History -> spotify_plays  (optional; missing zip
+                                                skipped with a notice)
+
+Outputs (tables in echo.db, created on demand):
+    watches, yt_searches, watch_later, google_searches, discover_feed,
+    calendar_events, transactions, spotify_plays
+
+Idempotency: every table has a UNIQUE constraint on its natural key
+(video_id+watched_at, query+searched_at, etc.). Safe to re-run after
+dropping a new Takeout / Spotify export into `_data/` — only new rows
+are inserted; duplicates silently fall away.
+
+Cost: zero (no API calls, pure local file processing).
+Runtime: ~5-15s for typical exports (~6k watches + ~17k Spotify plays).
 
 Run:
     python ingest.py
