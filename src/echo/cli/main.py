@@ -294,6 +294,27 @@ def view_reflections(
     mod.run(load_config(), no_open=no_open)
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind interface (use 0.0.0.0 for LAN access)."),
+    port: int = typer.Option(8000, "--port", help="TCP port."),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev mode)."),
+) -> None:
+    """Start the FastAPI backend, mounting the bundled SvelteKit UI at /.
+
+    The UI is shipped pre-built inside the wheel at src/echo/ui/dist/. If
+    that directory is empty (which it is on a fresh `pip install -e .`),
+    the API still starts but no UI is served - run a one-time build:
+
+        cd ui && npm install && npm run build && cp -r build ../src/echo/ui/dist
+
+    Then this command serves the full Echo Speaks landing page at the host
+    address it prints.
+    """
+    from echo.cli.serve import run as _serve
+    _serve(host=host, port=port, reload=reload)
+
+
 @app.command("migrate-data")
 def migrate_data(
     source: Path = typer.Option(
