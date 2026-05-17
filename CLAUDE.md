@@ -121,7 +121,7 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
 | `TODOS.md` | Deferred work + active focus pointer |
 | `Dockerfile`, `ui/Dockerfile`, `docker-compose.yml` | Container setup |
 | `.env` (gitignored) / `.env.example` (committed) | API key configuration |
-| `requirements.txt` | Python dependencies |
+| `pyproject.toml` | Package metadata + dependencies (canonical; `requirements.txt` retired) |
 
 ---
 

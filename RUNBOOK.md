@@ -8,28 +8,31 @@ For what tables/columns mean, see DATA.md.
 ## Prerequisites
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-`requirements.txt` covers: `sqlite-utils`, `ruptures`, `numpy`, `lancedb`, `openai`,
-`google-api-python-client`, `icalendar`, `pyyaml`, `fastapi[all]`, `uvicorn[standard]`,
-`anthropic`, `langfuse`, `pytest`, `httpx`.
+`pyproject.toml` declares every runtime dep (sqlite-utils, ruptures, lancedb,
+openai, anthropic, fastapi, uvicorn, typer, ...). The `dev` extra adds pytest:
 
-API keys go in `.env` (copy `.env.example` and fill in values):
+```bash
+pip install -e ".[dev]"
+```
+
+API keys live in `~/.echo/.env` (created by `echo init`; the wizard prompts
+for each one). For the canonical list and what each is used for, see
+[.env.example](./.env.example).
 
 | Key | Required for |
 |-----|-------------|
-| `YOUTUBE_API_KEY` | enrich.py |
-| `OPENAI_API_KEY` | embed.py (direct), reflect.py (direct) |
-| `OPENROUTER_API_KEY` | reflect.py / embed.py fallback; Echo Speaks LLM fallback |
-| `ANTHROPIC_API_KEY` | Echo Speaks (primary — preferred over OpenRouter) |
-| `UNSAFE_PYTHON_SANDBOX` | Echo Speaks execute_python tool (set "true" to enable; default false) |
-| `SPOTIFY_ZIP` | ingest.py — Spotify Extended Streaming History zip filename inside `_data/` (default: `my_spotify_data.zip`) |
-| `SPOTIFY_CLIENT_ID` | enrich_spotify.py (optional — Spotify API enrichment, Phase 2) |
-| `SPOTIFY_CLIENT_SECRET` | enrich_spotify.py (optional — Spotify API enrichment, Phase 2) |
-| `LANGFUSE_PUBLIC_KEY` | Echo Speaks observability (optional) |
-| `LANGFUSE_SECRET_KEY` | Echo Speaks observability (optional) |
-| `LANGFUSE_HOST` | Echo Speaks observability (default: `https://cloud.langfuse.com`) |
+| `YOUTUBE_API_KEY` | `echo enrich` |
+| `OPENAI_API_KEY` | `echo embed`, `echo reflect`, agent fallback |
+| `OPENROUTER_API_KEY` | reflect / embed / agent alternative path |
+| `ANTHROPIC_API_KEY` | Echo Speaks agent (primary; best prompt caching) |
+| `SPOTIFY_CLIENT_ID` + `_SECRET` | `echo enrich-spotify` (optional) |
+| `SPOTIFY_ZIP` | `echo ingest` — filename of Spotify zip inside `~/.echo/_data/` (defaults to `my_spotify_data.zip`) |
+| `UNSAFE_PYTHON_SANDBOX` | Echo Speaks `execute_python` tool (set `"true"` to enable; default `false`) |
+| `LANGFUSE_PUBLIC_KEY`, `_SECRET_KEY`, `_HOST` | Echo Speaks observability (all optional; falls back to noop) |
+| `ECHO_DATA_DIR` | Override the data dir (defaults to `~/.echo/`) |
 
 ---
 
@@ -341,7 +344,7 @@ Audio_2025 share late December 2024) — the UNIQUE index handles deduplication 
 
 **`ModuleNotFoundError`**
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 **`enrich.py` quota exhausted (HTTP 403)**
