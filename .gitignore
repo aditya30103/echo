@@ -58,6 +58,9 @@ ui/.vscode/
 
 # Claude Code per-developer state
 .claude/
+
+# gstack per-developer analytics (retros, timeline snapshots, etc.)
+.context/
 # (Permits committed CLAUDE.md at repo root since CLAUDE.md is not under .claude/)
 
 # Test caches
