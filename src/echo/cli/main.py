@@ -1,17 +1,39 @@
 """Echo CLI entry point.
 
-Skeleton wired in Step P2.2. Subcommands stub-only here; real implementations
-land across Steps P2.5+.
+After `pip install -e .` this is reachable as the `echo` command. Subcommands
+fall into two groups:
 
-After `pip install -e .` this is reachable as:
+  Setup + orchestration:
+    echo init                First-run interactive wizard
+    echo init --non-interactive [...]  Scripted setup for CI / containers
+    echo run [--from STEP]   Full pipeline (ingest -> ... -> embed)
+    echo doctor              Sanity-check the install
 
-    $ echo --help
-    $ echo --version
+  Individual pipeline steps:
+    echo ingest              Run ingest only
+    echo enrich              YouTube API enrichment
+    echo enrich-spotify      Spotify API enrichment
+    echo detect              PELT changepoint detection
+    echo signals             Engagement signal scoring
+    echo reflect             GPT-4o narrative reflection (use --dry-run first)
+    echo embed               LanceDB vector embedding
+    echo view-reflections    Render reflections to a static HTML page
+
+Run `echo <subcommand> --help` for per-command flags.
 """
+
+from __future__ import annotations
+
+import importlib
+import sys
+from pathlib import Path
+from typing import Optional
 
 import typer
 
 from echo import __version__
+from echo.config import EchoConfig, load_config
+from echo.cli.wizard import run_wizard, save_config
 
 app = typer.Typer(
     name="echo",
@@ -30,10 +52,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def _root(
     version: bool = typer.Option(
-        False,
-        "--version",
-        callback=_version_callback,
-        is_eager=True,
+        False, "--version", callback=_version_callback, is_eager=True,
         help="Show the version and exit.",
     ),
 ) -> None:
@@ -41,22 +60,237 @@ def _root(
     pass
 
 
+# ── Setup + orchestration ───────────────────────────────────────────────────
+
+
 @app.command()
-def init() -> None:
-    """First-run setup wizard. (Implementation lands in Step P2.5.)"""
-    typer.echo("[stub] echo init - wizard implementation pending (Step P2.5).")
+def init(
+    non_interactive: bool = typer.Option(
+        False, "--non-interactive",
+        help="Skip prompts; use existing config + env values + flags only.",
+    ),
+    data_dir: Optional[Path] = typer.Option(
+        None, "--data-dir", help="(non-interactive) Override data directory.",
+    ),
+    youtube_zip: Optional[Path]  = typer.Option(None, "--youtube-zip"),
+    activity_zip: Optional[Path] = typer.Option(None, "--activity-zip"),
+    calendar_zip: Optional[Path] = typer.Option(None, "--calendar-zip"),
+    spotify_zip: Optional[Path]  = typer.Option(None, "--spotify-zip"),
+) -> None:
+    """First-run setup wizard. Writes ~/.echo/config.toml and ~/.echo/.env.
+
+    Interactive by default. Pass --non-interactive for scripted setup (useful in
+    CI / containers / a smoke test); paths can be set via the flags above and
+    secrets via the standard env vars (ANTHROPIC_API_KEY etc.).
+    """
+    cfg = load_config()
+
+    if non_interactive:
+        if data_dir:    cfg.data_dir = data_dir.expanduser()
+        if youtube_zip:  cfg.takeout.youtube_zip  = youtube_zip.expanduser()
+        if activity_zip: cfg.takeout.activity_zip = activity_zip.expanduser()
+        if calendar_zip: cfg.takeout.calendar_zip = calendar_zip.expanduser()
+        if spotify_zip:  cfg.takeout.spotify_zip  = spotify_zip.expanduser()
+        typer.echo("Non-interactive init: using current config + flag overrides + env.")
+    else:
+        cfg = run_wizard(cfg)
+
+    config_path, env_path = save_config(cfg)
+    typer.echo(f"\nWrote: {config_path}")
+    typer.echo(f"Wrote: {env_path}")
+    typer.echo("\nNext: drop your Takeout / Spotify zips into the configured paths,")
+    typer.echo("      then run `echo run` to build your archive.")
+
+
+# Pipeline step ordering for `echo run`. Keep in sync with the design doc.
+_PIPELINE_STEPS = ("ingest", "enrich", "enrich-spotify", "detect", "signals", "reflect", "embed")
+
+
+def _module_for(step: str):
+    """Resolve a pipeline step name to its imported module."""
+    module_name = step.replace("-", "_")
+    return importlib.import_module(f"echo.pipeline.{module_name}")
+
+
+@app.command()
+def run(
+    from_step: Optional[str] = typer.Option(
+        None, "--from", help=f"Resume from a step (one of: {', '.join(_PIPELINE_STEPS)}).",
+    ),
+    skip_enrich_spotify: bool = typer.Option(
+        False, "--skip-enrich-spotify",
+        help="Skip Spotify enrichment (useful if you haven't configured a Spotify app yet).",
+    ),
+) -> None:
+    """Run the full pipeline: ingest -> enrich -> detect -> signals -> reflect -> embed.
+
+    Each step is idempotent on its own, so `echo run` is safe to re-run from
+    scratch. --from skips earlier steps that have already finished successfully.
+    """
+    cfg = load_config()
+
+    if from_step and from_step not in _PIPELINE_STEPS:
+        typer.echo(f"ERROR: unknown step {from_step!r}.")
+        typer.echo(f"Valid: {', '.join(_PIPELINE_STEPS)}")
+        raise typer.Exit(code=1)
+
+    steps = list(_PIPELINE_STEPS)
+    if from_step:
+        steps = steps[steps.index(from_step):]
+    if skip_enrich_spotify and "enrich-spotify" in steps:
+        steps.remove("enrich-spotify")
+
+    typer.echo(f"Running pipeline: {' -> '.join(steps)}\n")
+    for step in steps:
+        typer.echo(f"==> {step}")
+        mod = _module_for(step)
+        try:
+            mod.run(cfg)
+        except SystemExit as e:
+            # A pipeline step exited with sys.exit(); surface a clean message.
+            if e.code:
+                typer.echo(f"\nStep '{step}' aborted (exit code {e.code}).")
+                typer.echo(f"Fix the cause above, then resume with: echo run --from {step}")
+                raise typer.Exit(code=int(e.code or 1))
+        typer.echo("")
+
+    typer.echo("Pipeline complete. Echo is ready to query.")
 
 
 @app.command()
 def doctor() -> None:
-    """Sanity-check the install: paths, deps, API keys, schema. (Step P2.5.)"""
-    typer.echo("[stub] echo doctor - implementation pending (Step P2.5).")
+    """Sanity-check the install: paths, configured zips, API keys, db schema."""
+    cfg = load_config()
+
+    typer.echo("== Echo doctor ==\n")
+    typer.echo(f"Version:        {__version__}")
+    typer.echo(f"Python:         {sys.version.split()[0]}")
+    typer.echo(f"Data dir:       {cfg.data_dir}  "
+               f"({'OK' if cfg.data_dir.exists() else 'will be created on first write'})")
+    typer.echo(f"DB path:        {cfg.db_path}  ({'present' if cfg.db_path.exists() else 'absent'})")
+    typer.echo(f"LanceDB:        {cfg.lancedb_path}  ({'present' if cfg.lancedb_path.exists() else 'absent'})")
+    typer.echo(f"Annotations:    {cfg.annotations_path}  ({'present' if cfg.annotations_path.exists() else 'absent'})")
+    typer.echo("")
+    typer.echo("Source archives:")
+    for label, path in (
+        ("  youtube_zip ", cfg.takeout.youtube_zip),
+        ("  activity_zip", cfg.takeout.activity_zip),
+        ("  calendar_zip", cfg.takeout.calendar_zip),
+        ("  spotify_zip ", cfg.takeout.spotify_zip),
+    ):
+        status = "missing" if not path else ("OK" if path.exists() else "NOT FOUND")
+        typer.echo(f"{label}: {path or '(unset)'}  [{status}]")
+    typer.echo("")
+    typer.echo(f"Enrichments enabled: {cfg.enrichments or '(none)'}")
+    typer.echo(f"LLM provider:        {cfg.llm_provider}")
+    typer.echo("")
+    typer.echo("API keys (4-char tail shown if set):")
+    for label, key in (
+        ("  YOUTUBE      ", cfg.api_keys.youtube),
+        ("  OPENAI       ", cfg.api_keys.openai),
+        ("  OPENROUTER   ", cfg.api_keys.openrouter),
+        ("  ANTHROPIC    ", cfg.api_keys.anthropic),
+        ("  SPOTIFY_ID   ", cfg.api_keys.spotify_client_id),
+        ("  SPOTIFY_SEC  ", cfg.api_keys.spotify_client_secret),
+        ("  LANGFUSE_PUB ", cfg.api_keys.langfuse_public),
+        ("  LANGFUSE_SEC ", cfg.api_keys.langfuse_secret),
+    ):
+        if key:
+            tail = key[-4:] if len(key) > 4 else "***"
+            typer.echo(f"{label}: set (***{tail})")
+        else:
+            typer.echo(f"{label}: not set")
+    typer.echo("")
+
+    # DB schema sanity (only if DB exists)
+    if cfg.db_path.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(cfg.db_path))
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()]
+            conn.close()
+            typer.echo(f"DB tables ({len(tables)}): {', '.join(tables) or '(empty)'}")
+        except Exception as e:
+            typer.echo(f"DB read error: {e}")
+
+
+# ── Pipeline step subcommands ───────────────────────────────────────────────
 
 
 @app.command()
-def run() -> None:
-    """Run the full pipeline: ingest -> enrich -> detect -> signals -> reflect -> embed. (Step P2.5.)"""
-    typer.echo("[stub] echo run - implementation pending (Step P2.5).")
+def ingest() -> None:
+    """Ingest Takeout + Spotify archives into echo.db."""
+    from echo.pipeline import ingest as mod
+    mod.run(load_config())
+
+
+@app.command()
+def enrich(
+    key: Optional[str] = typer.Option(None, "--key", help="Override YouTube API key for this run."),
+) -> None:
+    """YouTube metadata enrichment (title, category, duration, tags)."""
+    from echo.pipeline import enrich as mod
+    mod.run(load_config(), api_key_override=key)
+
+
+@app.command("enrich-spotify")
+def enrich_spotify(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show pending count, no API calls."),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Enrich at most N pending tracks."),
+) -> None:
+    """Spotify metadata enrichment (duration, explicit, URI verify)."""
+    from echo.pipeline import enrich_spotify as mod
+    mod.run(load_config(), dry_run=dry_run, limit=limit)
+
+
+@app.command()
+def detect(
+    penalty: float = typer.Option(3.0, "--penalty", help="PELT penalty; higher = fewer chapters."),
+    plot: bool = typer.Option(False, "--plot", help="Save weekly_signal.png alongside the db."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print chapters; don't write to DB."),
+) -> None:
+    """PELT changepoint detection over weekly signals."""
+    from echo.pipeline import detect as mod
+    mod.run(load_config(), penalty=penalty, plot=plot, dry_run=dry_run)
+
+
+@app.command()
+def signals() -> None:
+    """Compute watch_signals + spotify_signals (engagement scoring)."""
+    from echo.pipeline import signals as mod
+    mod.run(load_config())
+
+
+@app.command()
+def reflect(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print prompts; no API calls."),
+    chapter: Optional[int] = typer.Option(None, "--chapter", help="Reflect on one chapter by number."),
+    autobiography: bool = typer.Option(False, "--autobiography", help="Full arc synthesis across all chapters."),
+) -> None:
+    """GPT-4o narrative reflection. ALWAYS run --dry-run first to preview prompts."""
+    from echo.pipeline import reflect as mod
+    mod.run(load_config(), dry_run=dry_run, chapter=chapter, autobiography=autobiography)
+
+
+@app.command()
+def embed(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show counts; no API calls."),
+    table: Optional[str] = typer.Option(None, "--table", help="Embed one table only (reflections / videos / searches / google_searches)."),
+) -> None:
+    """LanceDB vector embedding (4 corpora; provider via config)."""
+    from echo.pipeline import embed as mod
+    mod.run(load_config(), dry_run=dry_run, table=table)
+
+
+@app.command("view-reflections")
+def view_reflections(
+    no_open: bool = typer.Option(False, "--no-open", help="Write file; don't open browser."),
+) -> None:
+    """Render the reflections HTML viewer at <data_dir>/reflections_viewer.html."""
+    from echo.cli import view_reflections as mod
+    mod.run(load_config(), no_open=no_open)
 
 
 if __name__ == "__main__":
