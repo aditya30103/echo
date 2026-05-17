@@ -225,3 +225,37 @@ EXPECTED_WATCH_LATER  = 2
 EXPECTED_DISCOVER     = 2
 EXPECTED_CAL_EVENTS   = 2
 EXPECTED_TRANSACTIONS = 3
+
+
+def build_lancedb_videos(tmp_path: Path, n_rows: int = 12) -> Path:
+    """Build a tmp lancedb at tmp_path/lancedb with a populated `videos` table.
+
+    The table has the shape `run_clustering` reads (vector + title + channel +
+    video_id columns) with `n_rows` rows of random unit-norm 1536-dim vectors.
+    Returns the path to the lancedb directory.
+
+    Random vectors are deterministic (seeded) so test failures are reproducible.
+    """
+    import lancedb
+    import numpy as np
+
+    rng = np.random.default_rng(seed=42)
+    vectors = rng.standard_normal((n_rows, 1536), dtype=np.float32)
+    # Normalize to unit length so cosine distances behave sensibly
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+
+    rows = [
+        {
+            "video_id": f"fake{i:07d}",
+            "title":    f"Fake video {i}",
+            "channel":  f"Channel {i % 4}",
+            "text":     f"Fake video {i} - Channel {i % 4}",
+            "vector":   vectors[i].tolist(),
+        }
+        for i in range(n_rows)
+    ]
+
+    lance_dir = tmp_path / "lancedb"
+    db = lancedb.connect(str(lance_dir))
+    db.create_table("videos", data=rows)
+    return lance_dir

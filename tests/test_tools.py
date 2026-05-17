@@ -20,9 +20,31 @@ def test_pelt_invalid_freq():
     assert "ERROR" in result or "error" in result.lower()
 
 
-def test_pelt_happy_path():
-    from api.tools.pelt_tool import run_pelt
-    result = run_pelt(table="watches", ts_col="watched_at", value_col="*", freq="W", penalty=2.0)
+def test_pelt_happy_path(tmp_path, monkeypatch):
+    """Run PELT against a fixture-populated echo.db, not the dev's real one.
+
+    Builds a fresh echo.db via `ingest.run(config)` against the synthetic
+    Takeout zips from tests/fixtures.py. Monkeypatches the tool's module-level
+    _DB_PATH (resolved at import time from get_db_path()) so the tool reads
+    from the fixture DB instead of ~/.echo/echo.db.
+    """
+    from echo.config import EchoConfig, TakeoutPaths
+    from echo.pipeline import ingest
+    from api.tools import pelt_tool
+    from tests.fixtures import build_activity_zip, build_youtube_zip
+
+    cfg = EchoConfig(
+        data_dir=tmp_path,
+        takeout=TakeoutPaths(
+            activity_zip=build_activity_zip(tmp_path),
+            youtube_zip=build_youtube_zip(tmp_path),
+        ),
+    )
+    ingest.run(cfg)
+    monkeypatch.setattr(pelt_tool, "_DB_PATH", str(cfg.db_path))
+
+    result = pelt_tool.run_pelt(table="watches", ts_col="watched_at",
+                                value_col="*", freq="W", penalty=2.0)
     assert result.startswith("[RAW-COMPUTED]")
     data = json.loads(result[len("[RAW-COMPUTED] "):])
     assert "breakpoint_dates" in data
@@ -51,9 +73,20 @@ def test_clustering_n_clusters_exceeds_rows():
     assert "ERROR" in result
 
 
-def test_clustering_happy_path():
-    from api.tools.clustering_tool import run_clustering
-    result = run_clustering(table="videos", n_clusters=3)
+def test_clustering_happy_path(tmp_path, monkeypatch):
+    """Run k-means against a fixture-built lancedb, not the dev's real one.
+
+    Builds a tmp lancedb with 12 unit-norm 1536-dim vectors via
+    fixtures.build_lancedb_videos, then monkeypatches the tool's _LANCE_PATH
+    so the tool reads from the fixture instead of ~/.echo/lancedb/.
+    """
+    from api.tools import clustering_tool
+    from tests.fixtures import build_lancedb_videos
+
+    lance_dir = build_lancedb_videos(tmp_path, n_rows=12)
+    monkeypatch.setattr(clustering_tool, "_LANCE_PATH", str(lance_dir))
+
+    result = clustering_tool.run_clustering(table="videos", n_clusters=3)
     assert result.startswith("[RAW-COMPUTED]")
     data = json.loads(result[len("[RAW-COMPUTED] "):])
     assert "silhouette_score" in data
