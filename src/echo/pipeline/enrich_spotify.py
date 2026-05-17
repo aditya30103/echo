@@ -64,6 +64,13 @@ SLEEP_SEC = 1.0
 # re-run tomorrow (or with a fresh Client ID) rather than sleeping for hours.
 MAX_RETRY_WAIT_SEC = 120
 
+# Persist to spotify_tracks every N enriched rows. Trade-off: smaller = better
+# crash/quota resilience, larger = fewer SQLite write transactions. At 50 rows
+# and 1s/req, a flush happens every ~50s of API work — losing at most ~50
+# tracks if the process is killed between flushes. Anything we persist will be
+# skipped by the LEFT JOIN on the next run, giving free quasi-resume.
+BATCH_FLUSH_EVERY = 50
+
 
 # ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -169,48 +176,70 @@ def enrich(db: sqlite_utils.Database, client: SpotifyClient, limit: int | None) 
 
     print(f"      {total} tracks to enrich via search (~{round(total * SLEEP_SEC / 60, 1)} min)")
 
-    rows        = []
-    verified    = 0
-    unverified  = 0
-    not_found   = 0
-    report_every = max(1, total // 20)  # progress every 5%
+    rows: list[dict]  = []
+    written           = 0
+    verified          = 0
+    unverified        = 0
+    not_found         = 0
+    report_every      = max(1, total // 20)  # progress every 5%
 
-    for i, (uri, track_name, artist_name) in enumerate(pending, 1):
-        result = client.search(track_name, artist_name)
-        time.sleep(SLEEP_SEC)
+    def _flush() -> int:
+        """Persist whatever's in `rows`, clear it, return how many were written.
 
-        if result is None:
-            not_found += 1
-            rows.append({
-                "spotify_track_uri": uri,
-                "track_name":        track_name or None,
-                "artist_name":       artist_name or None,
-                "duration_ms":       None,
-                "explicit":          None,
-                "uri_verified":      0,
-            })
-        else:
-            matched = result.get("uri") == uri
-            if matched:
-                verified += 1
+        Called periodically and from the finally block, so a quota / network /
+        SIGINT failure mid-loop never throws away enrichment progress. The
+        next run's LEFT JOIN against spotify_tracks naturally skips anything
+        already persisted (quasi-resume for free).
+        """
+        nonlocal rows
+        if not rows:
+            return 0
+        n = len(rows)
+        db["spotify_tracks"].insert_all(rows, replace=True)
+        rows = []
+        return n
+
+    try:
+        for i, (uri, track_name, artist_name) in enumerate(pending, 1):
+            result = client.search(track_name, artist_name)
+            time.sleep(SLEEP_SEC)
+
+            if result is None:
+                not_found += 1
+                rows.append({
+                    "spotify_track_uri": uri,
+                    "track_name":        track_name or None,
+                    "artist_name":       artist_name or None,
+                    "duration_ms":       None,
+                    "explicit":          None,
+                    "uri_verified":      0,
+                })
             else:
-                unverified += 1
+                matched = result.get("uri") == uri
+                if matched:
+                    verified += 1
+                else:
+                    unverified += 1
 
-            rows.append({
-                "spotify_track_uri": uri,
-                "track_name":        result.get("name") or track_name or None,
-                "artist_name":       (result["artists"][0]["name"] if result.get("artists") else None) or artist_name or None,
-                "duration_ms":       result.get("duration_ms"),
-                "explicit":          int(bool(result.get("explicit"))),
-                "uri_verified":      int(matched),
-            })
+                rows.append({
+                    "spotify_track_uri": uri,
+                    "track_name":        result.get("name") or track_name or None,
+                    "artist_name":       (result["artists"][0]["name"] if result.get("artists") else None) or artist_name or None,
+                    "duration_ms":       result.get("duration_ms"),
+                    "explicit":          int(bool(result.get("explicit"))),
+                    "uri_verified":      int(matched),
+                })
 
-        if i % report_every == 0 or i == total:
-            pct = round(i / total * 100)
-            print(f"      [{pct:3d}%] {i}/{total}  verified={verified}  unverified={unverified}  not_found={not_found}")
+            if i % BATCH_FLUSH_EVERY == 0:
+                written += _flush()
 
-    db["spotify_tracks"].insert_all(rows, replace=True)
-    print(f"      +{len(rows)} rows written to spotify_tracks")
+            if i % report_every == 0 or i == total:
+                pct = round(i / total * 100)
+                print(f"      [{pct:3d}%] {i}/{total}  verified={verified}  unverified={unverified}  not_found={not_found}")
+    finally:
+        leftover = _flush()
+        written += leftover
+        print(f"      +{written} rows written to spotify_tracks")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
