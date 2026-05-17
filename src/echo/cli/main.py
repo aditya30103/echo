@@ -34,6 +34,7 @@ import typer
 from echo import __version__
 from echo.config import EchoConfig, load_config
 from echo.cli.wizard import run_wizard, save_config
+from echo.cli.migrate import migrate_data as _migrate_data
 
 app = typer.Typer(
     name="echo",
@@ -291,6 +292,29 @@ def view_reflections(
     """Render the reflections HTML viewer at <data_dir>/reflections_viewer.html."""
     from echo.cli import view_reflections as mod
     mod.run(load_config(), no_open=no_open)
+
+
+@app.command("migrate-data")
+def migrate_data(
+    source: Path = typer.Option(
+        ..., "--from", "-f",
+        help="Source directory (e.g. an old D:/Projects/Echo clone with echo.db at root).",
+    ),
+    move: bool = typer.Option(False, "--move", help="Move files instead of copying (faster; deletes source)."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing destination files."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the plan; touch nothing."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Move (or copy) pre-packaging Echo state into the configured data dir.
+
+    Migrates echo.db (+ wal/shm), lancedb/, and private/annotations.yaml from
+    a prior install (where they lived at repo root) into ~/.echo/ (or
+    wherever ECHO_DATA_DIR points). One-time op - saves re-running 10K of
+    YouTube enrichment quota and ~$5 of GPT-4o reflection cost.
+    """
+    cfg = load_config()
+    _migrate_data(source=source, data_dir=cfg.data_dir,
+                  move=move, force=force, dry_run=dry_run, yes=yes)
 
 
 if __name__ == "__main__":
