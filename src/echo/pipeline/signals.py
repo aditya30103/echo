@@ -218,6 +218,15 @@ def compute_spotify_signals(db: sqlite_utils.Database) -> tuple[list[dict], int]
 
 def print_spotify_summary(rows: list[dict], n_sessions: int) -> None:
     total       = len(rows)
+    print("=" * 52)
+    print("SPOTIFY SIGNALS COMPLETE")
+    print("=" * 52)
+    print(f"  Total plays:        {total:,}")
+    print(f"  Sessions:           {n_sessions:,}")
+
+    if total == 0:
+        return
+
     repeats     = sum(1 for r in rows if r["is_repeat"])
     fully       = sum(1 for r in rows if r["fully_played"])
     skipped     = sum(1 for r in rows if r["user_skipped"])
@@ -225,11 +234,6 @@ def print_spotify_summary(rows: list[dict], n_sessions: int) -> None:
     passive     = sum(1 for r in rows if r["intent_class"] == "passive")
     solo        = sum(1 for r in rows if r["session_length"] == 1)
 
-    print("=" * 52)
-    print("SPOTIFY SIGNALS COMPLETE")
-    print("=" * 52)
-    print(f"  Total plays:        {total:,}")
-    print(f"  Sessions:           {n_sessions:,}")
     print(f"  Solo sessions:      {solo:,}  ({solo * 100 // total}% of plays)")
     print(f"  Repeat plays:       {repeats:,}  ({repeats * 100 // total}%)")
     print(f"  Fully played:       {fully:,}  ({fully * 100 // total}%)")
