@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-static';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -7,10 +7,20 @@ const config = {
 		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true)
 	},
 	kit: {
-		// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-		adapter: adapter()
+		// adapter-static in SPA mode: every route is rendered client-side from a
+		// single index.html fallback. The Echo Speaks UI does live agent calls
+		// against /api/* at runtime; nothing is prerenderable from the static
+		// build, so SPA is the right shape.
+		// The build artifacts land in `ui/build/`; the packaging step copies them
+		// to `src/echo/ui/dist/` so `echo serve` can mount them via FastAPI's
+		// StaticFiles.
+		adapter: adapter({
+			pages: 'build',
+			assets: 'build',
+			fallback: 'index.html',
+			precompress: false,
+			strict: false
+		})
 	}
 };
 

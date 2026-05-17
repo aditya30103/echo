@@ -20,6 +20,13 @@ __pycache__/
 .Python
 *.egg-info/
 dist/
+# Exception: the SvelteKit build artifacts that `echo serve` mounts ship in
+# the wheel (per pyproject.toml [tool.hatch.build.targets.wheel.force-include]).
+# Friends `pip install -e .` and immediately have a working UI - no Node /
+# npm required at install time. Re-builds (cd ui && npm run build &&
+# cp -r build ../src/echo/ui/dist) are infrequent UI-change-only churn.
+!src/echo/ui/dist/
+!src/echo/ui/dist/**
 build/
 .venv/
 venv/
