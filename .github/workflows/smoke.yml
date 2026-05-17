@@ -1,0 +1,101 @@
+name: Smoke
+
+# Catches "works on my machine" regressions before merge to master.
+# Exercises:
+#   1. `pip install -e ".[dev]"` against the current pyproject.toml
+#   2. Full pytest suite (115 tests including the per-step pipeline integration tests)
+#   3. End-to-end CLI flow against the synthetic Takeout fixtures:
+#         echo init --non-interactive -> echo ingest -> echo signals -> echo detect -> echo doctor
+#      API-bound steps (enrich, reflect, embed) are skipped - they need
+#      keys we don't ship to CI.
+#
+# `python -m echo.cli.main` is used everywhere instead of the bare `echo`
+# command because bash's built-in `echo` would shadow the installed script.
+
+on:
+  push:
+    branches: [master, packaging-v1]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: CLI sanity (version, help)
+        run: |
+          python -m echo.cli.main --version
+          python -m echo.cli.main --help
+
+      - name: Pytest suite
+        run: pytest tests/ -v --tb=short
+
+      - name: End-to-end CLI smoke (init + ingest + signals + detect + doctor)
+        env:
+          ECHO_DATA_DIR: ${{ runner.temp }}/echo-data
+        run: |
+          # Materialize the synthetic Takeout fixtures into the workspace.
+          python -c "
+          from pathlib import Path
+          from tests.fixtures import build_activity_zip, build_youtube_zip, build_calendar_zip
+          d = Path('.').resolve()
+          build_activity_zip(d)
+          build_youtube_zip(d)
+          build_calendar_zip(d)
+          print('Fixtures materialized in', d)
+          "
+
+          mkdir -p "$ECHO_DATA_DIR"
+
+          # Configure the install pointing at the freshly-built zips.
+          python -m echo.cli.main init --non-interactive \
+            --data-dir "$ECHO_DATA_DIR" \
+            --activity-zip "$(pwd)/sample-activity.zip" \
+            --youtube-zip "$(pwd)/sample-youtube.zip" \
+            --calendar-zip "$(pwd)/sample-calendar.zip"
+
+          # Run the API-independent pipeline steps.
+          python -m echo.cli.main ingest
+          python -m echo.cli.main signals
+          python -m echo.cli.main detect --penalty 3.0
+
+          # Diagnostic - prints config + every table count.
+          python -m echo.cli.main doctor
+
+          # Assert the pipeline actually produced expected schema.
+          python -c "
+          import sqlite_utils, os
+          db = sqlite_utils.Database(os.environ['ECHO_DATA_DIR'] + '/echo.db')
+          tables = {t.name for t in db.tables}
+          required = {'watches', 'yt_searches', 'watch_later', 'google_searches',
+                      'discover_feed', 'calendar_events', 'transactions',
+                      'watch_signals', 'chapters', 'chapter_fingerprints'}
+          missing = required - tables
+          assert not missing, f'Missing tables after echo run: {missing}'
+          assert db['watches'].count == 45, f'Expected 45 watches, got {db[\"watches\"].count}'
+          assert db['chapters'].count >= 1, 'PELT produced no chapters'
+          print('All schema + row count assertions passed.')
+          "

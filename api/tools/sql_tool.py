@@ -2,9 +2,10 @@
 
 import re
 import sqlite3
-from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent.parent / "echo.db"
+from echo.data.paths import get_db_path
+
+DB_PATH = get_db_path()
 
 _SELECT_RE = re.compile(r'^\s*SELECT\b', re.IGNORECASE)
 _ROW_LIMIT  = 200

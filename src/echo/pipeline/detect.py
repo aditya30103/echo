@@ -42,8 +42,7 @@ import numpy as np
 import ruptures as rpt
 import sqlite_utils
 
-BASE    = Path(__file__).parent
-DB_PATH = BASE / "echo.db"
+from echo.config import EchoConfig, load_config
 
 MIN_WATCHES     = 3     # weeks with fewer watches → treated as sparse, linearly interpolated
                         # lowering this risks signal noise from single-video weeks
@@ -350,18 +349,25 @@ def save_plot(mondays: list[date], signal: np.ndarray, bkps: list[int], has_data
         print("matplotlib not installed — skipping plot")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
-def main():
+
+def run(
+    config: EchoConfig,
+    penalty: float = DEFAULT_PENALTY,
+    plot: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Detect chapter changepoints and write to chapters + chapter_fingerprints.
+
+    Args:
+        config:  EchoConfig (uses config.db_path).
+        penalty: PELT penalty (higher = fewer chapters; default 3).
+        plot:    If True, also save weekly_signal.png next to the db.
+        dry_run: If True, print chapter summary without writing to DB.
+    """
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-    parser = argparse.ArgumentParser(description="Echo Layer 2 — PELT changepoint detection")
-    parser.add_argument("--penalty", type=float, default=DEFAULT_PENALTY)
-    parser.add_argument("--plot",    action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args()
-
-    db = sqlite_utils.Database(DB_PATH)
+    db = sqlite_utils.Database(config.db_path)
 
     print("Loading watch data...", end=" ", flush=True)
     weekly = get_weekly_data(db)
@@ -369,22 +375,32 @@ def main():
     if not mondays:
         print("ERROR: no data from 2020+")
         sys.exit(1)
-    print(f"{len(mondays)} weeks  ({mondays[0]} → {mondays[-1]})")
+    print(f"{len(mondays)} weeks  ({mondays[0]} -> {mondays[-1]})")
 
     print("Running PELT...", end=" ", flush=True)
-    bkps = run_pelt(signal, penalty=args.penalty)
-    print(f"{len(bkps)} changepoints → {len(bkps)} chapters")
+    bkps = run_pelt(signal, penalty=penalty)
+    print(f"{len(bkps)} changepoints -> {len(bkps)} chapters")
 
-    chapters = write_chapters(db, mondays, bkps, dry_run=args.dry_run)
+    chapters = write_chapters(db, mondays, bkps, dry_run=dry_run)
 
     print()
-    print_summary(chapters, mondays, has_data, penalty=args.penalty)
+    print_summary(chapters, mondays, has_data, penalty=penalty)
 
-    if args.plot:
+    if plot:
         save_plot(mondays, signal, bkps, has_data)
 
-    if args.dry_run:
+    if dry_run:
         print("\n(dry-run: DB not modified)")
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.detect`."""
+    parser = argparse.ArgumentParser(description="Echo Layer 2 - PELT changepoint detection")
+    parser.add_argument("--penalty", type=float, default=DEFAULT_PENALTY)
+    parser.add_argument("--plot",    action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    run(load_config(), penalty=args.penalty, plot=args.plot, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

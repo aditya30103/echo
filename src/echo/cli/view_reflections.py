@@ -13,9 +13,7 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-BASE     = Path(__file__).parent
-DB_PATH  = BASE / "echo.db"
-OUT_PATH = BASE / "reflections_viewer.html"
+from echo.config import EchoConfig, load_config
 
 
 def fmt_month_year(date_str: str) -> str:
@@ -185,12 +183,20 @@ def build_html(rows: list) -> str:
 </html>"""
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate reflections HTML viewer")
-    parser.add_argument("--no-open", action="store_true", help="Write file but don't open browser")
-    args = parser.parse_args()
+def run(config: EchoConfig, no_open: bool = False) -> None:
+    """Generate the static HTML viewer for chapter reflections.
 
-    db   = sqlite_utils.Database(DB_PATH)
+    Output lives at config.data_dir / 'reflections_viewer.html'. Opens the
+    file in the default browser unless no_open=True.
+
+    Args:
+        config:  EchoConfig (uses config.db_path, config.data_dir).
+        no_open: Skip the webbrowser.open() call (useful for CI / SSH).
+    """
+    out_path = config.data_dir / "reflections_viewer.html"
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+
+    db   = sqlite_utils.Database(config.db_path)
     rows = db.execute("""
         SELECT r.chapter_id, c.start_at, c.end_at, r.reflection, r.created_at
         FROM reflections r
@@ -200,16 +206,24 @@ def main():
     """).fetchall()
 
     if not rows:
-        print("No chapter reflections found — run reflect.py first.")
+        print("No chapter reflections found - run `echo reflect` first.")
         return
 
     html = build_html(rows)
-    OUT_PATH.write_text(html, encoding="utf-8")
-    print(f"Written: {OUT_PATH}")
+    out_path.write_text(html, encoding="utf-8")
+    print(f"Written: {out_path}")
 
-    if not args.no_open:
-        webbrowser.open(OUT_PATH.as_uri())
+    if not no_open:
+        webbrowser.open(out_path.as_uri())
         print("Opened in browser.")
+
+
+def main() -> None:
+    """Legacy entry for `python -m echo.cli.view_reflections [--no-open]`."""
+    parser = argparse.ArgumentParser(description="Generate reflections HTML viewer")
+    parser.add_argument("--no-open", action="store_true", help="Write file but don't open browser")
+    args = parser.parse_args()
+    run(load_config(), no_open=args.no_open)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,26 @@
+# Echo dev stack: FastAPI backend + SvelteKit UI.
+#
+# Data location: by default, mounts the current directory at /data inside the
+# container (matches the pre-packaging layout where echo.db lives at repo root).
+# To use the packaged ~/.echo/ layout:
+#
+#   On Linux / macOS:  export ECHO_DATA_DIR=~/.echo && docker compose up
+#   On Windows (psh):  $env:ECHO_DATA_DIR = "$HOME\.echo"; docker compose up
+#
+# The api container reads ECHO_DATA_DIR=/data internally (see Dockerfile) and
+# resolves echo.db, lancedb/, .env, private/ relative to that mount.
+
 services:
   api:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./echo.db:/app/echo.db:ro
-      - ./.env:/app/.env:ro
+      # Host data dir -> /data inside the container. Read-only so a stray
+      # container write can't corrupt your local DB.
+      - ${ECHO_DATA_DIR:-./}:/data:ro
     environment:
+      - ECHO_DATA_DIR=/data
       - UNSAFE_PYTHON_SANDBOX=false
 
   ui:

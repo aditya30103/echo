@@ -14,23 +14,23 @@ The data spans personal life from age 13 onwards; treat with appropriate care.
 
 ---
 
-## Next major work — read first
+## Status — packaging shipped, awaiting merge
 
-**Packaging is the active focus for the next session.** The pipeline scripts
-(`ingest.py`, `enrich.py`, …) currently live at repo root and run as standalone
-Python files. The next session modularises them into an installable `echo` CLI
-so friends can clone, install, and run the full pipeline with one command.
+The `packaging-v1` branch ships the installable `echo` CLI plus every
+follow-on (api/ migration, docker mount updates, `echo serve`,
+`echo migrate-data`, full README/SETUP/ARCHITECTURE doc trio,
+requirements.txt retired in favor of pyproject.toml).
 
-Design doc when present: `~/.gstack/projects/Echo/Aditya Arya-master-design-packaging-*.md`.
+Open queue for the next session (all in `TODOS.md`):
+- Fixture-based integration tests (one per pipeline step against a tiny
+  hand-crafted Takeout zip under `tests/fixtures/`).
+- GitHub Action smoke test (clone → `pip install -e .` → `echo init
+  --non-interactive` → `echo run` against the fixture).
+- SvelteKit `adapter-static` swap so `echo serve` ships the UI prebuilt.
+- Final pytest sanity gate, then merge `packaging-v1` → `master`.
+- Spotify Phase 2 (`echo enrich-spotify` full run) when quota unblocks.
 
-Until packaging lands:
-- **Don't polish `SETUP.md`, `README.md` (when added), or `ARCHITECTURE.md` (when added).**
-  They will be rewritten around packaged commands and module references.
-- **Don't refactor pipeline scripts** beyond their current shape — packaging
-  will reorganise them anyway.
-- DO continue applying the conventions and gotchas below for any local edits.
-
-Active deferred work and the packaging design pointer live in `TODOS.md`.
+Design doc for packaging: `~/.gstack/projects/Echo/Aditya Arya-master-design-packaging-20260516.md`.
 
 ---
 
@@ -121,7 +121,7 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
 | `TODOS.md` | Deferred work + active focus pointer |
 | `Dockerfile`, `ui/Dockerfile`, `docker-compose.yml` | Container setup |
 | `.env` (gitignored) / `.env.example` (committed) | API key configuration |
-| `requirements.txt` | Python dependencies |
+| `pyproject.toml` | Package metadata + dependencies (canonical; `requirements.txt` retired) |
 
 ---
 

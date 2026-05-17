@@ -44,11 +44,7 @@ from pathlib import Path
 import lancedb
 import sqlite_utils
 
-from embed_common import load_env, get_embed_client, ALL_TABLES
-
-BASE         = Path(__file__).parent
-DB_PATH      = BASE / "echo.db"
-LANCEDB_PATH = BASE / "lancedb"
+from echo.config import ALL_TABLES, EchoConfig, get_embed_client, load_config
 
 EMBED_DIMS = 1536
 
@@ -190,20 +186,22 @@ def write_table(ldb, name: str, records: list[dict], vectors: list[list[float]])
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main():
+def run(config: EchoConfig, dry_run: bool = False, table: str | None = None) -> None:
+    """Embed configured corpora into LanceDB.
+
+    Args:
+        config:  EchoConfig (uses config.db_path, config.lancedb_path,
+                 config.api_keys.openai / config.api_keys.openrouter).
+        dry_run: Show counts + sample texts, make no API calls.
+        table:   If provided, embed only this table (one of ALL_TABLES).
+    """
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    load_env()
 
-    parser = argparse.ArgumentParser(description="Echo Layer 4 — semantic embeddings")
-    parser.add_argument("--dry-run", action="store_true", help="Show counts, no API calls")
-    parser.add_argument("--table",   choices=ALL_TABLES,  help="Embed one table only")
-    args = parser.parse_args()
+    tables_to_run = [table] if table else ALL_TABLES
 
-    tables_to_run = [args.table] if args.table else ALL_TABLES
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    db = sqlite_utils.Database(config.db_path)
 
-    db = sqlite_utils.Database(DB_PATH)
-
-    # Load data
     loaders = {
         "reflections":    load_reflections,
         "videos":         load_videos,
@@ -213,9 +211,9 @@ def main():
     datasets = {name: loaders[name](db) for name in tables_to_run}
 
     SEP = "=" * 60
-    print(f"{SEP}\nECHO LAYER 4 — EMBEDDINGS\n{SEP}\n")
+    print(f"{SEP}\nECHO LAYER 4 - EMBEDDINGS\n{SEP}\n")
 
-    if args.dry_run:
+    if dry_run:
         for name, records in datasets.items():
             print(f"{name}: {len(records)} items")
             for rec in records[:3]:
@@ -226,20 +224,29 @@ def main():
     client, model = get_embed_client()
     print(f"Provider: {model}\n")
 
-    ldb = lancedb.connect(str(LANCEDB_PATH))
+    ldb = lancedb.connect(str(config.lancedb_path))
 
     for name, records in datasets.items():
         print(f"-- {name} --")
         if not records:
-            print(f"  No data found — skipping.")
+            print(f"  No data found - skipping.")
             continue
         texts   = [r["text"] for r in records]
         vectors = embed_all(client, model, texts, name)
         write_table(ldb, name, records, vectors)
         print()
 
-    print(f"Done. lancedb written to: {LANCEDB_PATH}")
+    print(f"Done. lancedb written to: {config.lancedb_path}")
     print(f"Tables: {', '.join(ldb.list_tables().tables)}")
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.embed [--dry-run] [--table NAME]`."""
+    parser = argparse.ArgumentParser(description="Echo Layer 4 - semantic embeddings")
+    parser.add_argument("--dry-run", action="store_true", help="Show counts, no API calls")
+    parser.add_argument("--table",   choices=ALL_TABLES,  help="Embed one table only")
+    args = parser.parse_args()
+    run(load_config(), dry_run=args.dry_run, table=args.table)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,10 @@ import os
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 
-_DB_PATH     = str(Path(__file__).parent.parent.parent / "echo.db")
+from echo.data.paths import get_db_path
+
+_DB_PATH     = str(get_db_path())
 _TIMEOUT     = 30     # seconds; kills runaway loops
 _STDOUT_CAP  = 10000  # chars; printing full DataFrames wastes context window
 _STDERR_CAP  = 3000   # chars; scientific library tracebacks can reach 2,000+ chars

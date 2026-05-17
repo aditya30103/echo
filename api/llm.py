@@ -10,11 +10,6 @@ The chat() function is the single call-site for all LLM text generation.
 
 from __future__ import annotations
 import os
-import sys
-from pathlib import Path
-
-BASE = Path(__file__).parent.parent
-sys.path.insert(0, str(BASE))
 
 CLAUDE_MODEL   = "claude-sonnet-4-6"
 GPT4O_MODEL    = "openai/gpt-4o"          # OpenRouter slug
@@ -22,7 +17,7 @@ GPT4O_DIRECT   = "gpt-4o"                 # OpenAI direct slug
 
 
 def _load_env():
-    from embed_common import load_env
+    from echo.config import load_env
     load_env()
 
 

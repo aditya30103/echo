@@ -1,32 +1,34 @@
 #!/usr/bin/env python3
 """
-Echo Layer 1 — Takeout + Spotify ingestion into echo.db.
+Echo Layer 1 - Takeout + Spotify ingestion into echo.db.
 
-The first stage in the pipeline. Reads raw archive files from `_data/` and
-writes one row per source event into typed SQLite tables. Every later
-script reads what ingest.py wrote — nothing depends on a later stage.
+The first stage in the pipeline. Reads raw archive files (paths from
+EchoConfig.takeout) and writes one row per source event into typed SQLite
+tables at config.db_path. Every later pipeline module reads what this
+wrote; nothing depends on a later stage.
 
-Inputs (all in _data/, paths configurable near the top of the file):
-    YouTube Takeout zip      -> watches, yt_searches, watch_later
-    Google My Activity zip   -> google_searches, discover_feed
-    Calendar Takeout zip     -> calendar_events
-    Spotify Extended History -> spotify_plays  (optional; missing zip
-                                                skipped with a notice)
+Inputs (paths from config.takeout — see `echo init` to configure):
+    youtube_zip  -> watches, yt_searches, watch_later
+    activity_zip -> google_searches, discover_feed, transactions
+    calendar_zip -> calendar_events
+    spotify_zip  -> spotify_plays  (optional; missing path skipped with notice)
 
-Outputs (tables in echo.db, created on demand):
+Outputs (tables in config.db_path, created on demand):
     watches, yt_searches, watch_later, google_searches, discover_feed,
     calendar_events, transactions, spotify_plays
 
 Idempotency: every table has a UNIQUE constraint on its natural key
 (video_id+watched_at, query+searched_at, etc.). Safe to re-run after
-dropping a new Takeout / Spotify export into `_data/` — only new rows
+dropping a new Takeout / Spotify export into `_data/` - only new rows
 are inserted; duplicates silently fall away.
 
 Cost: zero (no API calls, pure local file processing).
 Runtime: ~5-15s for typical exports (~6k watches + ~17k Spotify plays).
 
-Run:
-    python ingest.py
+Invocation:
+    echo ingest                          # via CLI (preferred)
+    python -m echo.pipeline.ingest       # direct, uses load_config() defaults
+    from echo.pipeline.ingest import run # programmatic
 """
 
 import csv
@@ -41,19 +43,7 @@ from pathlib import Path
 
 import sqlite_utils
 
-# ── Paths ──────────────────────────────────────────────────────────────────
-BASE = Path(__file__).parent
-DB_PATH = BASE / "echo.db"
-
-# Raw source archives live in `_data/` (gitignored) — keeps the repo root tidy
-# and shields ~340MB of personal data from accidental `git add`. Replace these
-# filenames with whatever Google Takeout / Spotify named YOUR exports.
-DATA_DIR     = BASE / "_data"
-ZIP_YT       = DATA_DIR / "takeout-20260512T160253Z-4-001.zip"   # YouTube Takeout
-ZIP_ACTIVITY = DATA_DIR / "takeout-20260512T160253Z-6-001.zip"   # My Activity
-ZIP_CALENDAR = DATA_DIR / "takeout-20260512T161750Z-3-001.zip"   # Calendar
-# SPOTIFY_ZIP: place my_spotify_data.zip in _data/, or override via env var
-ZIP_SPOTIFY  = DATA_DIR / os.environ.get("SPOTIFY_ZIP", "my_spotify_data.zip")
+from echo.config import EchoConfig, load_config
 
 
 # ── Timestamp helpers ───────────────────────────────────────────────────────
@@ -437,7 +427,7 @@ def load_transactions(db, entries: list) -> int:
 
 
 # ── Spotify loader ───────────────────────────────────────────────────────────
-def load_spotify(db, zip_path: Path = ZIP_SPOTIFY) -> tuple[int, int]:
+def load_spotify(db, zip_path: Path | None) -> tuple[int, int]:
     """Ingest Spotify Extended Streaming History from zip file.
 
     Reads all Streaming_History_Audio_*.json and Streaming_History_Video_*.json.
@@ -448,11 +438,13 @@ def load_spotify(db, zip_path: Path = ZIP_SPOTIFY) -> tuple[int, int]:
     Timestamps normalized to +00:00 suffix (same as watches.watched_at) so all
     cross-table time comparisons work correctly as strings.
 
-    Returns (inserted, already_existed).
+    Returns (inserted, already_existed). If zip_path is None or missing,
+    skips silently and returns (0, 0).
     """
-    if not zip_path.exists():
-        print(f"      [skip] {zip_path.name} not found — place it at project root "
-              f"or set SPOTIFY_ZIP env var")
+    if zip_path is None or not zip_path.exists():
+        label = zip_path.name if zip_path else "(not configured)"
+        print(f"      [skip] Spotify zip {label} not found - configure via "
+              f"`echo init` or place it in your data dir")
         return 0, 0
 
     rows = []
@@ -509,69 +501,85 @@ def load_spotify(db, zip_path: Path = ZIP_SPOTIFY) -> tuple[int, int]:
     return inserted, len(rows) - inserted
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-def main():
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    db = sqlite_utils.Database(DB_PATH)
-    print(f"Echo database: {DB_PATH}\n")
+# ── Entry point ──────────────────────────────────────────────────────────────
 
-    init_schema(db)
-    print("Schema ready.\n")
 
-    # 1. Watches — My Activity YouTube (primary: widest coverage, 2016-2026)
-    print("[1/9] Watches: My Activity YouTube")
-    with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
-        with zf.open("Takeout/My Activity/YouTube/MyActivity.json") as f:
-            entries = json.load(f)
-    ins, ads, noid = load_watches(db, entries, "my_activity")
-    print(f"      +{ins} inserted | {ads} ads dropped | {noid} no video ID")
+def _ingest_yt_archive(db, zip_path: Path | None, step_label: str) -> None:
+    """Ingest the YouTube Takeout archive (watches + searches + Watch Later).
 
-    # 2. Watches — YouTube Takeout (supplements; UNIQUE constraint deduplicates)
-    print("[2/9] Watches: YouTube Takeout")
-    with zipfile.ZipFile(ZIP_YT) as zf:
+    Each sub-step gracefully skips if the zip is missing. Logs progress.
+    """
+    if zip_path is None or not zip_path.exists():
+        print(f"      [skip] YouTube Takeout zip not configured - "
+              f"set config.takeout.youtube_zip or run `echo init`")
+        return
+
+    # Watches from YouTube Takeout (supplements My Activity if present)
+    with zipfile.ZipFile(zip_path) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/history/watch-history.json") as f:
             entries = json.load(f)
     ins, ads, noid = load_watches(db, entries, "yt_takeout")
-    print(f"      +{ins} new unique | {ads} ads dropped | {noid} no video ID")
-    total = db.execute("SELECT COUNT(*) FROM watches").fetchone()[0]
-    print(f"      Total unique watches: {total:,}\n")
+    print(f"{step_label} Watches (YouTube Takeout): +{ins} new | {ads} ads | {noid} no-id")
 
-    # 3. YouTube searches
-    print("[3/9] YouTube searches")
-    with zipfile.ZipFile(ZIP_YT) as zf:
+    # YouTube search history
+    with zipfile.ZipFile(zip_path) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/history/search-history.json") as f:
             entries = json.load(f)
     ins = load_yt_searches(db, entries)
-    print(f"      +{ins} queries\n")
+    print(f"      YouTube searches: +{ins} queries")
 
-    # 4. Watch Later
-    print("[4/9] Watch Later")
-    with zipfile.ZipFile(ZIP_YT) as zf:
+    # Watch Later
+    with zipfile.ZipFile(zip_path) as zf:
         with zf.open("Takeout/YouTube and YouTube Music/playlists/Watch later-videos.csv") as f:
             content = f.read().decode("utf-8", errors="replace")
     ins = load_watch_later(db, content)
-    print(f"      +{ins} bookmarks\n")
+    print(f"      Watch Later: +{ins} bookmarks")
 
-    # 5. Google searches
-    print("[5/9] Google searches")
-    with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
+
+def _ingest_activity_archive(db, zip_path: Path | None, step_label: str) -> None:
+    """Ingest the Google My Activity archive (YT watches, searches, discover, transactions)."""
+    if zip_path is None or not zip_path.exists():
+        print(f"      [skip] My Activity zip not configured - "
+              f"set config.takeout.activity_zip or run `echo init`")
+        return
+
+    # Watches from My Activity (primary source: widest coverage)
+    with zipfile.ZipFile(zip_path) as zf:
+        with zf.open("Takeout/My Activity/YouTube/MyActivity.json") as f:
+            entries = json.load(f)
+    ins, ads, noid = load_watches(db, entries, "my_activity")
+    print(f"{step_label} Watches (My Activity): +{ins} inserted | {ads} ads | {noid} no-id")
+
+    # Google searches
+    with zipfile.ZipFile(zip_path) as zf:
         with zf.open("Takeout/My Activity/Search/MyActivity.json") as f:
             entries = json.load(f)
     ins = load_google_searches(db, entries)
-    print(f"      +{ins} queries\n")
+    print(f"      Google searches: +{ins} queries")
 
-    # 6. Discover feed
-    print("[6/9] Discover feed snapshots")
-    with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
+    # Discover feed
+    with zipfile.ZipFile(zip_path) as zf:
         with zf.open("Takeout/My Activity/Discover/MyActivity.json") as f:
             entries = json.load(f)
     ins = load_discover(db, entries)
-    print(f"      +{ins} daily snapshots\n")
+    print(f"      Discover feed: +{ins} snapshots")
 
-    # 7. Calendar events
-    print("[7/9] Calendar events")
+    # Google Pay transactions
+    with zipfile.ZipFile(zip_path) as zf:
+        with zf.open("Takeout/My Activity/Google Pay/MyActivity.json") as f:
+            entries = json.load(f)
+    ins = load_transactions(db, entries)
+    print(f"      GPay transactions: +{ins} transactions")
+
+
+def _ingest_calendar_archive(db, zip_path: Path | None, step_label: str) -> None:
+    if zip_path is None or not zip_path.exists():
+        print(f"      [skip] Calendar zip not configured - "
+              f"set config.takeout.calendar_zip or run `echo init`")
+        return
+    print(f"{step_label} Calendar events")
     cal_total = 0
-    with zipfile.ZipFile(ZIP_CALENDAR) as zf:
+    with zipfile.ZipFile(zip_path) as zf:
         for path in sorted(n for n in zf.namelist() if n.endswith(".ics")):
             name = Path(path).stem.strip()
             with zf.open(path) as f:
@@ -579,26 +587,14 @@ def main():
             ins = load_calendar_ics(db, content, name)
             print(f"      {name}: {ins}")
             cal_total += ins
-    print(f"      Total: {cal_total:,} events\n")
+    print(f"      Total: {cal_total:,} events")
 
-    # 8. Google Pay transactions
-    print("[8/9] Google Pay transactions")
-    with zipfile.ZipFile(ZIP_ACTIVITY) as zf:
-        with zf.open("Takeout/My Activity/Google Pay/MyActivity.json") as f:
-            entries = json.load(f)
-    ins = load_transactions(db, entries)
-    print(f"      +{ins} transactions\n")
 
-    # 9. Spotify Extended Streaming History
-    print("[9/9] Spotify Extended Streaming History")
-    ins, dup = load_spotify(db)
-    if ins + dup > 0:
-        total_sp = db.execute("SELECT COUNT(*) FROM spotify_plays").fetchone()[0]
-        print(f"      +{ins:,} inserted | {dup:,} already existed | {total_sp:,} total\n")
-    else:
-        print()
-
-    # ── Summary ──────────────────────────────────────────────────────────────
+def _print_summary(db, db_path: Path) -> None:
+    """Best-effort post-ingest summary. Skips tables that don't exist yet
+    (chapters / signals / reflections are created by later pipeline steps).
+    """
+    print()
     print("=" * 54)
     print("INGESTION COMPLETE")
     print("=" * 54)
@@ -609,20 +605,73 @@ def main():
         "spotify_plays",
     ]
     for t in tables:
-        n = db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        print(f"  {t:<22} {n:>6,}")
+        try:
+            n = db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            print(f"  {t:<22} {n:>6,}")
+        except Exception:
+            # Table not created yet (typical pre-detect / pre-reflect / pre-embed)
+            pass
 
-    print("\nWatch events by year:")
-    for year, n in db.execute(
-        "SELECT substr(watched_at,1,4) AS y, COUNT(*) FROM watches GROUP BY y ORDER BY y"
-    ).fetchall():
-        bar = "█" * (n // 100)
-        print(f"  {year}  {n:>5,}  {bar}")
+    try:
+        print("\nWatch events by year:")
+        for year, n in db.execute(
+            "SELECT substr(watched_at,1,4) AS y, COUNT(*) FROM watches GROUP BY y ORDER BY y"
+        ).fetchall():
+            bar = "#" * (n // 100)
+            print(f"  {year}  {n:>5,}  {bar}")
+    except Exception:
+        pass
 
-    size_kb = DB_PATH.stat().st_size // 1024
-    print(f"\nDatabase size: {size_kb:,} KB")
-    print(f"Location:      {DB_PATH}")
-    print("\nNext: pip install datasette && datasette echo.db")
+    try:
+        size_kb = db_path.stat().st_size // 1024
+        print(f"\nDatabase size: {size_kb:,} KB")
+        print(f"Location:      {db_path}")
+    except Exception:
+        pass
+
+
+def run(config: EchoConfig) -> None:
+    """Top-level pipeline entry: ingest all configured sources into config.db_path.
+
+    Idempotent: each loader uses UNIQUE constraints so re-runs are safe.
+    Missing source archives are skipped with a notice (no error).
+
+    Args:
+        config: EchoConfig with takeout.* paths and data_dir set.
+    """
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    # Ensure the data directory exists before sqlite_utils tries to touch a file in it.
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+
+    db = sqlite_utils.Database(config.db_path)
+    print(f"Echo database: {config.db_path}\n")
+    init_schema(db)
+    print("Schema ready.\n")
+
+    _ingest_activity_archive(db, config.takeout.activity_zip, "[1/4]")
+    total = db.execute("SELECT COUNT(*) FROM watches").fetchone()[0]
+    print(f"      Watches total so far: {total:,}\n")
+
+    _ingest_yt_archive(db, config.takeout.youtube_zip, "[2/4]")
+    total = db.execute("SELECT COUNT(*) FROM watches").fetchone()[0]
+    print(f"      Total unique watches: {total:,}\n")
+
+    _ingest_calendar_archive(db, config.takeout.calendar_zip, "[3/4]")
+    print()
+
+    print("[4/4] Spotify Extended Streaming History")
+    ins, dup = load_spotify(db, config.takeout.spotify_zip)
+    if ins + dup > 0:
+        total_sp = db.execute("SELECT COUNT(*) FROM spotify_plays").fetchone()[0]
+        print(f"      +{ins:,} inserted | {dup:,} already existed | {total_sp:,} total")
+
+    _print_summary(db, config.db_path)
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.ingest`."""
+    run(load_config())
 
 
 if __name__ == "__main__":

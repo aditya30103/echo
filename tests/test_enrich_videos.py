@@ -22,6 +22,12 @@ def mem_db():
         "start_at": str,
         "end_at": str,
     }, pk="id")
+    # _enrich_videos LEFT JOINs watch_signals; the in-memory DB must have the
+    # schema for the join to resolve (rows can be empty - LEFT JOIN handles it).
+    db["watch_signals"].create({
+        "watch_id":      int,
+        "rewatch_count": int,
+    }, pk="watch_id")
     return db
 
 

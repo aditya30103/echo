@@ -1,12 +1,10 @@
 """lancedb connection and semantic search helpers."""
 
-import sys
-from pathlib import Path
-
 import lancedb
 
-BASE = Path(__file__).parent.parent
-LANCEDB_PATH = BASE / "lancedb"
+from echo.data.paths import get_lancedb_path
+
+LANCEDB_PATH = get_lancedb_path()
 
 _ldb = None
 
@@ -17,7 +15,7 @@ def get_ldb() -> lancedb.DBConnection:
         if not LANCEDB_PATH.exists():
             raise RuntimeError(
                 f"lancedb/ directory not found at {LANCEDB_PATH}. "
-                "Run embed.py first to build the vector index."
+                "Run `echo embed` first to build the vector index."
             )
         _ldb = lancedb.connect(str(LANCEDB_PATH))
     return _ldb
@@ -25,10 +23,8 @@ def get_ldb() -> lancedb.DBConnection:
 
 def embed_query(query: str) -> list[float]:
     """Embed a query string using the configured provider (OpenAI or OpenRouter)."""
-    # Import here so FastAPI startup doesn't fail if keys aren't set yet.
-    import os
-    sys.path.insert(0, str(BASE))
-    from embed_common import load_env, get_embed_client
+    # Import lazily so FastAPI startup doesn't fail if keys aren't set yet.
+    from echo.config import get_embed_client, load_env
     load_env()
     client, model = get_embed_client()
     resp = client.embeddings.create(model=model, input=[query])

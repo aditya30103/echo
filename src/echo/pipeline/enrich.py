@@ -39,11 +39,8 @@ from pathlib import Path
 
 import requests
 import sqlite_utils
-from dotenv import load_dotenv
 
-BASE = Path(__file__).parent
-load_dotenv(BASE / ".env")
-DB_PATH = BASE / "echo.db"
+from echo.config import EchoConfig, load_config
 
 API_URL    = "https://www.googleapis.com/youtube/v3/videos"
 BATCH_SIZE = 50      # YouTube API max per request
@@ -141,21 +138,25 @@ def fetch_batch(video_ids: list, api_key: str) -> dict:
     return result
 
 
-def main():
+def run(config: EchoConfig, api_key_override: str | None = None) -> None:
+    """Enrich watches with YouTube metadata.
+
+    Args:
+        config:           EchoConfig (uses config.db_path, config.api_keys.youtube).
+        api_key_override: If provided, overrides config.api_keys.youtube (useful for
+                          a one-off run with a different key).
+    """
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="Enrich Echo watch history via YouTube API")
-    parser.add_argument("--key", help="YouTube Data API v3 key")
-    args = parser.parse_args()
-
-    api_key = args.key or os.environ.get("YOUTUBE_API_KEY", "").strip()
+    api_key = (api_key_override or config.api_keys.youtube or "").strip()
     if not api_key:
         print("ERROR: YouTube API key required.")
-        print("  Set:  $env:YOUTUBE_API_KEY = 'YOUR_KEY'")
-        print("  Or:   python enrich.py --key YOUR_KEY")
+        print("  Set YOUTUBE_API_KEY in ~/.echo/.env, or run `echo init` to configure,")
+        print("  or pass --key with `python -m echo.pipeline.enrich --key YOUR_KEY`.")
         sys.exit(1)
 
-    db = sqlite_utils.Database(DB_PATH)
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    db = sqlite_utils.Database(config.db_path)
 
     # Determine what still needs fetching
     already = {r[0] for r in db.execute("SELECT video_id FROM video_metadata").fetchall()}
@@ -266,8 +267,16 @@ def _print_summary(db):
         LIMIT 15
     """).fetchall()
     for cat, n, pct in rows:
-        bar = "█" * int(pct // 2)
+        bar = "#" * int(pct // 2)
         print(f"  {n:>5}  {pct:>5.1f}%  {cat:<28}  {bar}")
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.enrich [--key KEY]`."""
+    parser = argparse.ArgumentParser(description="Enrich Echo watch history via YouTube API")
+    parser.add_argument("--key", help="YouTube Data API v3 key (overrides config)")
+    args = parser.parse_args()
+    run(load_config(), api_key_override=args.key)
 
 
 if __name__ == "__main__":
