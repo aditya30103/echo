@@ -49,10 +49,8 @@ from pathlib import Path
 
 import httpx
 import sqlite_utils
-from embed_common import load_env
 
-BASE    = Path(__file__).parent
-DB_PATH = BASE / "echo.db"
+from echo.config import EchoConfig, load_config
 
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_SEARCH    = "https://api.spotify.com/v1/search"
@@ -217,25 +215,27 @@ def enrich(db: sqlite_utils.Database, client: SpotifyClient, limit: int | None) 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
-def main() -> None:
-    load_env()
+def run(config: EchoConfig, dry_run: bool = False, limit: int | None = None) -> None:
+    """Enrich spotify_plays with track metadata via the Spotify search API.
 
-    parser = argparse.ArgumentParser(description="Enrich spotify_plays via Spotify search API")
-    parser.add_argument("--dry-run", action="store_true", help="Show pending count, no API calls")
-    parser.add_argument("--limit",   type=int,            help="Enrich at most N pending tracks")
-    args = parser.parse_args()
-
-    client_id     = os.environ.get("SPOTIFY_CLIENT_ID", "")
-    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+    Args:
+        config:  EchoConfig (uses config.db_path, config.api_keys.spotify_*).
+        dry_run: If True, prints the pending count and exits without API calls.
+        limit:   If set, enriches at most N pending tracks (useful for testing).
+    """
+    client_id     = config.api_keys.spotify_client_id or ""
+    client_secret = config.api_keys.spotify_client_secret or ""
 
     if not client_id or not client_secret:
         print(
-            "ERROR: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in .env\n"
+            "ERROR: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set.\n"
+            "Run `echo init` to configure, or add them to ~/.echo/.env directly.\n"
             "Create a Spotify Developer app at developer.spotify.com/dashboard"
         )
         sys.exit(1)
 
-    db = sqlite_utils.Database(DB_PATH)
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    db = sqlite_utils.Database(config.db_path)
     init_schema(db)
 
     already = db.execute("SELECT COUNT(*) FROM spotify_tracks").fetchone()[0]
@@ -250,7 +250,7 @@ def main() -> None:
 
     print(f"spotify_tracks: {already} already enriched, {pending} pending")
 
-    if args.dry_run:
+    if dry_run:
         print("[dry-run] no API calls made")
         return
 
@@ -260,7 +260,7 @@ def main() -> None:
 
     client = SpotifyClient(client_id, client_secret)
     try:
-        enrich(db, client, limit=args.limit)
+        enrich(db, client, limit=limit)
     finally:
         client.close()
 
@@ -272,6 +272,15 @@ def main() -> None:
     print(f"Done. spotify_tracks: {total_now} total")
     print(f"  duration_ms filled : {duration_ok} ({round(duration_ok/total_now*100)}%)")
     print(f"  URI verified match : {uri_ok} ({round(uri_ok/total_now*100)}%)")
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.enrich_spotify [--dry-run] [--limit N]`."""
+    parser = argparse.ArgumentParser(description="Enrich spotify_plays via Spotify search API")
+    parser.add_argument("--dry-run", action="store_true", help="Show pending count, no API calls")
+    parser.add_argument("--limit",   type=int,            help="Enrich at most N pending tracks")
+    args = parser.parse_args()
+    run(load_config(), dry_run=args.dry_run, limit=args.limit)
 
 
 if __name__ == "__main__":
