@@ -1,6 +1,6 @@
 """Tests that the speak endpoint and SpeakResponse carry token counts (Sprint 4 + 5)."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 def test_speak_endpoint_propagates_token_counts():
     """The /api/speak endpoint must return token counts from the finish event."""
     from api.main import app
+    from api.db import get_db
 
     def fake_loop(req, db):
         yield {
@@ -24,9 +25,18 @@ def test_speak_endpoint_propagates_token_counts():
             "total_cache_read_tokens": 200,
         }
 
-    with patch("api.routers.speak._react_loop", fake_loop):
-        client = TestClient(app)
-        resp = client.post("/api/speak", json={"query": "test"})
+    # Override the get_db dependency so FastAPI doesn't try to open a real
+    # SQLite file - on a fresh machine (e.g. CI) ~/.echo/echo.db doesn't exist
+    # yet, so the default get_db raises OperationalError. The endpoint's
+    # behavior under test (token-count propagation) doesn't touch the DB.
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+
+    try:
+        with patch("api.routers.speak._react_loop", fake_loop):
+            client = TestClient(app)
+            resp = client.post("/api/speak", json={"query": "test"})
+    finally:
+        app.dependency_overrides.clear()
 
     assert resp.status_code == 200
     data = resp.json()
