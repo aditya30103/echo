@@ -1,0 +1,97 @@
+name: Publish to PyPI
+
+# Fires on any tag matching v* (e.g. v0.1.0, v0.1.1, v1.0.0).
+#
+# Bumping a release:
+#   1. Edit pyproject.toml `version = "..."` to the new value.
+#   2. git commit -am "release: vX.Y.Z"
+#   3. git tag vX.Y.Z
+#   4. git push origin master && git push origin vX.Y.Z
+#   5. This workflow fires on the tag push, builds the wheel + sdist, and
+#      publishes to PyPI under the project name in pyproject.toml ("echo-archaeology").
+#
+# One-time PyPI setup (do this once, before the first tag push):
+#
+#   a) Reserve the project name on PyPI. Two options:
+#      (i)  Manual: create the project at https://pypi.org/manage/account/publishing/
+#           by adding a "Pending publisher" for: owner=aditya30103, repo=echo,
+#           workflow=publish.yml, environment=pypi.
+#      (ii) Or do a one-time manual upload first (`python -m build && twine upload dist/*`)
+#           to claim the name, then configure trusted publishing afterwards.
+#
+#   b) Create a GitHub "Environment" named `pypi` for this repo (Settings ->
+#      Environments -> New environment). Optionally add required reviewers /
+#      branch protection there for human approval before each publish.
+#
+# After (a) + (b) are done, this workflow needs no secrets and no PyPI tokens.
+# Trusted publishing uses OIDC to authenticate the workflow run to PyPI.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write   # Required for OIDC trusted publishing
+
+jobs:
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node 20 (for the bundled SvelteKit UI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Rebuild UI bundle (overwrites src/echo/ui/dist with fresh artifacts)
+        # Even though src/echo/ui/dist is committed for `pip install -e .`
+        # convenience, a release should always rebuild from source so a stale
+        # local dist doesn't ship to PyPI.
+        run: |
+          cd ui
+          npm ci
+          npm run build
+          rm -rf ../src/echo/ui/dist
+          cp -r build ../src/echo/ui/dist
+
+      - name: Build wheel + sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI via trusted publishing
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/echo-archaeology
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
