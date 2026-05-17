@@ -63,13 +63,16 @@ def test_clustering_happy_path():
 
 # ── run_youtube_lookup ────────────────────────────────────────────────────────
 
-def test_youtube_missing_api_key():
-    from api.tools.youtube_tool import run_youtube_lookup
-    with patch.dict(os.environ, {}, clear=True):
-        # Remove YOUTUBE_API_KEY if present
-        env = {k: v for k, v in os.environ.items() if k != "YOUTUBE_API_KEY"}
-        with patch.dict(os.environ, env, clear=True):
-            result = run_youtube_lookup("dQw4w9WgXcQ")
+def test_youtube_missing_api_key(monkeypatch):
+    from api.tools import youtube_tool
+
+    # `run_youtube_lookup` calls `_load_env` which reads .env via echo.config
+    # and may re-populate YOUTUBE_API_KEY from the file on the dev's host.
+    # Stub it out so we control exactly what the tool sees.
+    monkeypatch.setattr(youtube_tool, "_load_env", lambda: None)
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+
+    result = youtube_tool.run_youtube_lookup("dQw4w9WgXcQ")
     assert "[EXTERNAL]" in result
     assert "ERROR" in result
 
