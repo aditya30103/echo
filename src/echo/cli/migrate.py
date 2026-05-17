@@ -43,6 +43,22 @@ class MigrationItem:
     will_overwrite: bool  # dst exists?
 
 
+def _is_placeholder(path: Path, kind: str) -> bool:
+    """A destination that isn't real data and should not block migration.
+
+    sqlite_utils.Database / sqlite3.connect open the file eagerly, so any prior
+    pipeline call against a fresh ~/.echo/ (init, doctor's connect path, an
+    aborted `echo run`, etc.) leaves a 0-byte echo.db sitting around. Without
+    this check, migrate-data refuses to overwrite it and a friend has to
+    discover --force on their own.
+    """
+    if not path.exists():
+        return False
+    if kind == "file":
+        return path.stat().st_size == 0
+    return not any(path.iterdir())  # empty directory
+
+
 def plan(source_dir: Path, data_dir: Path) -> list[MigrationItem]:
     """Compute what would migrate from source_dir into data_dir.
 
@@ -57,7 +73,7 @@ def plan(source_dir: Path, data_dir: Path) -> list[MigrationItem]:
         items.append(MigrationItem(
             src=src, dst=dst, kind=kind, description=desc,
             exists=src.exists(),
-            will_overwrite=dst.exists(),
+            will_overwrite=dst.exists() and not _is_placeholder(dst, kind),
         ))
     return items
 
@@ -91,7 +107,13 @@ def execute(
 
         try:
             item.dst.parent.mkdir(parents=True, exist_ok=True)
-            if item.will_overwrite and force:
+            # Force-overwrite (user opted in) OR silently clear an empty
+            # placeholder left behind by a prior pipeline / sqlite_utils call.
+            should_clear = (
+                (item.will_overwrite and force)
+                or (item.dst.exists() and _is_placeholder(item.dst, item.kind))
+            )
+            if should_clear:
                 if item.kind == "file":
                     item.dst.unlink()
                 else:
