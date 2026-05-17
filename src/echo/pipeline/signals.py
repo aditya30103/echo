@@ -29,8 +29,7 @@ from pathlib import Path
 
 import sqlite_utils
 
-BASE    = Path(__file__).parent
-DB_PATH = BASE / "echo.db"
+from echo.config import EchoConfig, load_config
 
 SESSION_GAP_MIN  = 30   # gap > 30 min between consecutive watches → new session
                         # standard definition used in YouTube research literature;
@@ -274,9 +273,14 @@ def print_summary(rows: list[dict], n_sessions: int):
     return total, n_sessions
 
 
-def main():
+def run(config: EchoConfig) -> None:
+    """Compute and write watch_signals + spotify_signals.
+
+    Args:
+        config: EchoConfig (uses config.db_path).
+    """
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    db = sqlite_utils.Database(DB_PATH)
+    db = sqlite_utils.Database(config.db_path)
 
     print("Computing watch signals...", flush=True)
     rows, n_sessions = compute(db)
@@ -302,7 +306,7 @@ def main():
         print()
         print_spotify_summary(sp_rows, sp_sessions)
     else:
-        print("[skip] spotify_plays table not found — run ingest.py first")
+        print("[skip] spotify_plays table not found - run `echo ingest` first")
 
     print()
     print_summary(rows, n_sessions)
@@ -332,6 +336,11 @@ def main():
     """).fetchall()
     for title, n in top_search:
         print(f"  {n:>2}x  {title[:70]}")
+
+
+def main() -> None:
+    """Legacy entry retained for `python -m echo.pipeline.signals`."""
+    run(load_config())
 
 
 if __name__ == "__main__":
