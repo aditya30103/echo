@@ -44,12 +44,11 @@ from pathlib import Path
 
 import sqlite_utils
 
-BASE             = Path(__file__).parent
-DB_PATH          = BASE / "echo.db"
-ENV_PATH         = BASE / ".env"
-# Personal life-context lives under private/ (gitignored); the .example template
-# at repo root documents the schema. reflect.py works without either file.
-ANNOTATIONS_PATH = BASE / "private" / "annotations.yaml"
+from echo.config import EchoConfig, load_config
+
+# Module-level holder for the active annotations path. Set by run(config) before
+# any call to load_annotations(). Tests can monkeypatch this directly.
+ANNOTATIONS_PATH: Path | None = None
 
 OPENAI_MODEL      = "gpt-4o"
 OPENROUTER_MODEL  = "openai/gpt-4o"  # OpenRouter uses provider-namespaced IDs
@@ -79,15 +78,7 @@ Be concrete — name actual videos, searches, and patterns. Don't moralize.
 """
 
 
-# ── Env / API setup ───────────────────────────────────────────────────────────
-
-def load_env():
-    if ENV_PATH.exists():
-        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
+# ── API setup ─────────────────────────────────────────────────────────────────
 
 
 def get_openai_client():
@@ -135,7 +126,7 @@ def call_gpt4o(client, model: str, system: str, user: str) -> str:
 
 def load_annotations(chapter_start: str, chapter_end: str) -> list[str]:
     """Return annotation notes whose date range overlaps with [chapter_start, chapter_end]."""
-    if not ANNOTATIONS_PATH.exists():
+    if ANNOTATIONS_PATH is None or not ANNOTATIONS_PATH.exists():
         return []
     try:
         import yaml
@@ -359,34 +350,59 @@ def save_reflection(db: sqlite_utils.Database, chapter_id, kind: str, prompt: st
     db.conn.commit()
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
-def main():
+
+def _push_api_keys_to_env(config: EchoConfig) -> None:
+    """Make config.api_keys visible to get_openai_client(), which reads os.environ.
+
+    This is the bridge while reflect.py still uses os.environ-based client init.
+    Future cleanup: refactor get_openai_client to take config directly.
+    """
+    if config.api_keys.openai:
+        os.environ.setdefault("OPENAI_API_KEY", config.api_keys.openai)
+    if config.api_keys.openrouter:
+        os.environ.setdefault("OPENROUTER_API_KEY", config.api_keys.openrouter)
+
+
+def run(
+    config: EchoConfig,
+    dry_run: bool = False,
+    chapter: int | None = None,
+    autobiography: bool = False,
+) -> None:
+    """Generate per-chapter or whole-arc reflections via GPT-4o.
+
+    Args:
+        config:        EchoConfig (uses config.db_path, config.api_keys.openai/openrouter,
+                       config.annotations_path).
+        dry_run:       Print assembled prompts only; no API calls, no DB writes.
+        chapter:       If set, reflect on just chapter N (1-indexed).
+        autobiography: If True, run the whole-arc synthesis instead of per-chapter.
+    """
+    global ANNOTATIONS_PATH
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    load_env()
 
-    parser = argparse.ArgumentParser(description="Echo Layer 3 — GPT-4o narrative reflection")
-    parser.add_argument("--dry-run",       action="store_true", help="Print prompts, don't call API")
-    parser.add_argument("--chapter",       type=int,            help="Reflect on one chapter by number")
-    parser.add_argument("--autobiography", action="store_true", help="Full arc synthesis across all chapters")
-    args = parser.parse_args()
+    # Wire up the annotations path so load_annotations() finds the right file.
+    ANNOTATIONS_PATH = config.annotations_path
+    _push_api_keys_to_env(config)
 
-    db = sqlite_utils.Database(DB_PATH)
+    db = sqlite_utils.Database(config.db_path)
     ensure_reflections_table(db)
 
     client = None
     model  = OPENAI_MODEL  # overwritten below when not dry-run
-    if not args.dry_run:
+    if not dry_run:
         client, model = get_openai_client()
 
     SEP = "=" * 70
 
-    if args.autobiography:
-        print(f"{SEP}\nECHO LAYER 3 — AUTOBIOGRAPHY\n{SEP}\n")
+    if autobiography:
+        print(f"{SEP}\nECHO LAYER 3 - AUTOBIOGRAPHY\n{SEP}\n")
         prompt = build_autobiography_prompt(db)
 
-        if args.dry_run:
-            print("── PROMPT ──────────────────────────────────────────────────────")
+        if dry_run:
+            print("-- PROMPT ------------------------------------------------------")
             print(prompt)
             print()
             return
@@ -394,7 +410,7 @@ def main():
         print(f"Calling {model}...", flush=True)
         reflection = call_gpt4o(client, model, AUTOBIOGRAPHY_SYSTEM, prompt)
         save_reflection(db, chapter_id=None, kind="autobiography", prompt=prompt, reflection=reflection, model=model)
-        print("\n── REFLECTION ──────────────────────────────────────────────────")
+        print("\n-- REFLECTION --------------------------------------------------")
         print(reflection)
         print(f"\nSaved to reflections table.")
         return
@@ -405,30 +421,30 @@ def main():
     ).fetchall()
 
     if not chapters:
-        print("ERROR: no chapters found — run detect.py first")
+        print("ERROR: no chapters found - run `echo detect` first")
         sys.exit(1)
 
-    if args.chapter:
-        idx = args.chapter - 1
+    if chapter:
+        idx = chapter - 1
         if idx < 0 or idx >= len(chapters):
-            print(f"ERROR: chapter {args.chapter} not found (have 1–{len(chapters)})")
+            print(f"ERROR: chapter {chapter} not found (have 1-{len(chapters)})")
             sys.exit(1)
         target = [chapters[idx]]
-        nums   = [args.chapter]
+        nums   = [chapter]
     else:
         target = chapters
         nums   = list(range(1, len(chapters) + 1))
 
-    print(f"{SEP}\nECHO LAYER 3 — CHAPTER REFLECTIONS\n{SEP}\n")
+    print(f"{SEP}\nECHO LAYER 3 - CHAPTER REFLECTIONS\n{SEP}\n")
 
     for num, (ch_id, start_at, end_at, label) in zip(nums, target):
-        print(f"Chapter {num:>2}  {start_at} → {end_at}", flush=True)
+        print(f"Chapter {num:>2}  {start_at} -> {end_at}", flush=True)
         ctx         = assemble_chapter_context(db, ch_id, start_at, end_at)
         ann         = load_annotations(start_at, end_at)
         prompt      = build_chapter_prompt(num, ctx, annotations=ann)
 
-        if args.dry_run:
-            print("── PROMPT ──────────────────────────────────────────────────────")
+        if dry_run:
+            print("-- PROMPT ------------------------------------------------------")
             print(prompt)
             print()
             continue
@@ -438,12 +454,22 @@ def main():
         save_reflection(db, chapter_id=ch_id, kind="chapter", prompt=prompt, reflection=reflection, model=model)
         print("done")
         print()
-        print("── REFLECTION ──────────────────────────────────────────────────")
+        print("-- REFLECTION --------------------------------------------------")
         print(reflection)
         print()
 
-    if not args.dry_run:
+    if not dry_run:
         print(f"\nAll reflections saved to reflections table.")
+
+
+def main() -> None:
+    """Legacy entry for `python -m echo.pipeline.reflect [--dry-run] [--chapter N] [--autobiography]`."""
+    parser = argparse.ArgumentParser(description="Echo Layer 3 - GPT-4o narrative reflection")
+    parser.add_argument("--dry-run",       action="store_true", help="Print prompts, don't call API")
+    parser.add_argument("--chapter",       type=int,            help="Reflect on one chapter by number")
+    parser.add_argument("--autobiography", action="store_true", help="Full arc synthesis across all chapters")
+    args = parser.parse_args()
+    run(load_config(), dry_run=args.dry_run, chapter=args.chapter, autobiography=args.autobiography)
 
 
 if __name__ == "__main__":
