@@ -12,10 +12,7 @@ _UNITS_PER_CALL    = 1     # videos.list costs 1 unit
 
 
 def _load_env() -> None:
-    from pathlib import Path
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from embed_common import load_env
+    from echo.config import load_env
     load_env()
 
 

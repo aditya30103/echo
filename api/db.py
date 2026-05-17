@@ -1,10 +1,11 @@
 """SQLite connection for the Echo API."""
 
 import sqlite3
-from pathlib import Path
 import sqlite_utils
 
-DB_PATH = Path(__file__).parent.parent / "echo.db"
+from echo.data.paths import get_db_path
+
+DB_PATH = get_db_path()
 
 _db: sqlite_utils.Database | None = None
 

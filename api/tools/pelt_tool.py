@@ -2,9 +2,10 @@
 
 import json
 import sqlite3
-from pathlib import Path
 
-_DB_PATH = str(Path(__file__).parent.parent.parent / "echo.db")
+from echo.data.paths import get_db_path
+
+_DB_PATH = str(get_db_path())
 
 
 def run_pelt(

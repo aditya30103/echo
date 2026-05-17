@@ -1,9 +1,10 @@
 """run_clustering tool — k-means on lancedb embedding vectors."""
 
 import json
-from pathlib import Path
 
-_LANCE_PATH = str(Path(__file__).parent.parent.parent / "lancedb")
+from echo.data.paths import get_lancedb_path
+
+_LANCE_PATH = str(get_lancedb_path())
 _VALID_TABLES = {"videos", "searches", "google_searches"}
 
 

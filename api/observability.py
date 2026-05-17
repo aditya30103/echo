@@ -210,10 +210,7 @@ def get_langfuse() -> _LiveLangfuse | _NoopLangfuse:
         return _instance  # type: ignore
 
     _init_tried = True
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from embed_common import load_env
+    from echo.config import load_env
     load_env()
 
     pk = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
