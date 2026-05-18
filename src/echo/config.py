@@ -348,5 +348,10 @@ def get_embed_client():
     )
 
 
-# Legacy: api/vec.py imports this list to know which tables to expose
-ALL_TABLES = ["reflections", "videos", "searches", "google_searches"]
+# Legacy: api/vec.py imports this list to know which tables to expose.
+# spotify_tracks (5th) lands per the Spotify rework design - it carries
+# Last.fm-sourced mood/genre tags so the agent's vector_search can answer
+# cross-modal queries ("when was I in a melancholy phase, and what was I
+# watching?"). The agent's vector_search dispatch picks it up automatically
+# once it's in ALL_TABLES.
+ALL_TABLES = ["reflections", "videos", "searches", "google_searches", "spotify_tracks"]

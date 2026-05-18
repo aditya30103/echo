@@ -12,6 +12,8 @@ Corpora:
   - videos          : unique video titles + channel (for content-level search)
   - searches        : unique YouTube search queries (for intent-level search)
   - google_searches : unique Google search queries (cross-platform intent)
+  - spotify_tracks  : track + artist + Last.fm tags (mood/genre dimension,
+                      powers cross-modal queries via the agent)
 
 Inputs:  reflections, watches+video_metadata, yt_searches, google_searches
          (echo.db)
@@ -165,6 +167,55 @@ def load_google_searches(db: sqlite_utils.Database) -> list[dict]:
     ]
 
 
+def load_spotify_tracks(db: sqlite_utils.Database) -> list[dict]:
+    """Tracks that have been through Last.fm enrichment (meta_enriched_at NOT NULL).
+
+    Uses build_track_embed_text() to compose the embedding string with the
+    Tier-2-over-Tier-1 fallback. Misses (tags=NULL or "[]") still produce a
+    row with the bare "track by artist" string - they're not useful for
+    mood queries but they're still discoverable by name.
+    """
+    import json
+    from echo.pipeline.enrich_music_meta import build_track_embed_text
+
+    if "spotify_tracks" not in db.table_names():
+        return []
+
+    rows = db.execute("""
+        SELECT spotify_track_uri, track_name, artist_name,
+               lastfm_tags, artist_lastfm_tags
+        FROM spotify_tracks
+        WHERE meta_enriched_at IS NOT NULL
+          AND track_name IS NOT NULL AND track_name != ''
+          AND artist_name IS NOT NULL AND artist_name != ''
+        ORDER BY spotify_track_uri
+    """).fetchall()
+
+    records = []
+    for uri, track_name, artist_name, lastfm_raw, artist_raw in rows:
+        # Tags are stored as JSON strings; parse defensively (some legacy rows
+        # may be plain NULL).
+        try:
+            track_tags = json.loads(lastfm_raw) if lastfm_raw else None
+        except json.JSONDecodeError:
+            track_tags = None
+        try:
+            artist_tags = json.loads(artist_raw) if artist_raw else None
+        except json.JSONDecodeError:
+            artist_tags = None
+
+        text = build_track_embed_text(track_name, artist_name, track_tags, artist_tags)
+        records.append({
+            "uri":                uri,
+            "track_name":         track_name,
+            "artist_name":        artist_name,
+            "lastfm_tags":        lastfm_raw or "",         # store raw JSON string for downstream filtering
+            "artist_lastfm_tags": artist_raw or "",
+            "text":               text,
+        })
+    return records
+
+
 # ── lancedb writes ────────────────────────────────────────────────────────────
 
 def write_table(ldb, name: str, records: list[dict], vectors: list[list[float]]):
@@ -207,6 +258,7 @@ def run(config: EchoConfig, dry_run: bool = False, table: str | None = None) -> 
         "videos":         load_videos,
         "searches":       load_searches,
         "google_searches": load_google_searches,
+        "spotify_tracks": load_spotify_tracks,
     }
     datasets = {name: loaders[name](db) for name in tables_to_run}
 
