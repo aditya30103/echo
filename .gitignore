@@ -76,3 +76,4 @@ private/
 # Raw source archives (Takeout zips, Spotify export, etc.)
 # ingest.py reads these from _data/ at runtime; never commit them.
 _data/
+.gstack/

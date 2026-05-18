@@ -3,7 +3,50 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="text-scale" content="scale" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet" />
+		<style>
+			:root {
+				--bg:              #0c0906;
+				--surface-0:       #140f0a;
+				--surface-1:       #1e1610;
+				--border:          #2a1f15;
+				--text-muted:      #6b5a45;
+				--text-secondary:  #a89070;
+				--text-primary:    #e8d5b0;
+				--text-bright:     #f5ead0;
+				--accent:          #c2820a;
+				--accent-dim:      #7a5008;
+				--accent-glow:     #e8a020;
+				--signal-cold:     #7a9aaa;
+				--signal-cold-dim: #3a5a6a;
+				--data-green:      #4a7c59;
+				--data-amber:      #b07820;
+				--data-red:        #8a3a2a;
+			}
+			*, *::before, *::after { box-sizing: border-box; }
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--text-primary);
+				font-family: 'Geist Mono', monospace;
+				font-size: 16px;
+			}
+			.voice-output {
+				font-family: 'Lora', serif;
+				font-size: 1rem;
+				line-height: 1.7;
+				color: var(--text-primary);
+			}
+			.data-output {
+				font-family: 'Geist Mono', monospace;
+				font-size: 0.875rem;
+				line-height: 1.5;
+				color: var(--text-secondary);
+				font-variant-numeric: tabular-nums;
+			}
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
