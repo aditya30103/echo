@@ -103,6 +103,28 @@ Both components extracted from inline markup and CSS; SpeakView and +page.svelte
 
 ---
 
+## Design Audit — /design-review run (2026-05-18)
+
+**Status:** 3/4 findings fixed. FINDING-004 deferred (polish-level).
+
+FINDING-001, -002, -003 shipped in commits `80c6765`, `f88f9db`, `62f6a43`.
+Design score: B (78) → B+ (84). Full audit report at
+`~/.gstack/projects/Echo/designs/design-audit-20260518/design-audit-localhost.md`.
+
+### FINDING-004 — Agency Map section header contrast (deferred, polish)
+
+**What:** Agency section headers use `--text-muted` on `--surface-0`. Contrast
+may be borderline for WCAG AA on the label text above each agency bar group.
+
+**Why deferred:** These are section dividers, not primary reading content. The
+risk is low and fixing it may require a new semantic token between `--text-muted`
+and `--text-secondary`. Not worth doing in isolation.
+
+**Fix when ready:** Audit computed contrast, and if below 4.5:1, move section
+labels to `--text-secondary`. Takes 5 minutes once decided.
+
+---
+
 ## NOTE: Packaging session 1 + 2 — completion summary
 
 **Status:** `packaging-v1` branch is feature-complete for the packaged-CLI
