@@ -482,7 +482,7 @@
 		margin-bottom: 1rem;
 		flex-wrap: wrap;
 	}
-	h2 { margin: 0; font-size: 1.3rem; color: var(--text-bright); font-family: 'Geist Mono', monospace; }
+	h2 { margin: 0; font-size: 1.3rem; color: var(--text-bright); font-family: 'Geist Mono', monospace; word-spacing: -0.05em; }
 	.view-descriptor {
 		font-size: 0.65rem;
 		font-weight: 600;
