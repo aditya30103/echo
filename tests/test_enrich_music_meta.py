@@ -46,17 +46,34 @@ class _FakeArtist:
         return [_FakeTopItem(t) for t in self._result[:limit]]
 
 
-class _FakeNetwork:
-    """Maps artist_name -> tag list OR Exception. Tracks call counts."""
+class _FakeTrack:
+    def __init__(self, result):
+        self._result = result
+    def get_top_tags(self, limit: int = 10):
+        if isinstance(self._result, Exception):
+            raise self._result
+        return [_FakeTopItem(t) for t in self._result[:limit]]
 
-    def __init__(self, mapping: dict):
+
+class _FakeNetwork:
+    """Maps artist_name -> tag list OR Exception. Tracks call counts.
+
+    track_mapping (optional) maps (artist_name, track_name) -> tags or Exception.
+    """
+
+    def __init__(self, mapping: dict, track_mapping: dict | None = None):
         self.mapping = mapping
+        self.track_mapping = track_mapping or {}
         self.calls: list[str] = []
+        self.track_calls: list[tuple[str, str]] = []
 
     def get_artist(self, name: str) -> _FakeArtist:
         self.calls.append(name)
-        # Default: empty list (means "API succeeded, no tags").
         return _FakeArtist(self.mapping.get(name, []))
+
+    def get_track(self, artist: str, track: str) -> _FakeTrack:
+        self.track_calls.append((artist, track))
+        return _FakeTrack(self.track_mapping.get((artist, track), []))
 
 
 def _ws_error(status: str = "6", details: str = "test") -> pylast.WSError:
@@ -345,6 +362,147 @@ def test_tier1_rate_limit_retries_via_call_with_retry(tmp_path, monkeypatch):
     assert json.loads(row[0]) == ["rock"]
 
 
+# ── _tier2 ───────────────────────────────────────────────────────────────────
+
+def _seed_plays(db: sqlite_utils.Database, plays: list[tuple[str, int]]) -> None:
+    """Create spotify_plays and seed with (uri, count) tuples."""
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS spotify_plays (
+            id INTEGER PRIMARY KEY,
+            ts TEXT NOT NULL,
+            ms_played INTEGER NOT NULL DEFAULT 0,
+            spotify_track_uri TEXT,
+            track_name TEXT,
+            artist_name TEXT,
+            content_type TEXT NOT NULL
+        )
+    """)
+    rows = []
+    next_id = 1
+    for uri, count in plays:
+        for _ in range(count):
+            rows.append({
+                "id": next_id,
+                "ts": "2025-01-01T00:00:00+00:00",
+                "ms_played": 200000,
+                "spotify_track_uri": uri,
+                "track_name": None,  # tier2 reads from spotify_tracks, not plays
+                "artist_name": None,
+                "content_type": "track",
+            })
+            next_id += 1
+    db["spotify_plays"].insert_all(rows)
+
+
+def test_tier2_top_n_zero_is_noop(tmp_path):
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": "spotify:track:0001", "artist_name": "A", "track_name": "T1"},
+    ])
+    _seed_plays(db, [("spotify:track:0001", 5)])
+    net = _FakeNetwork({}, track_mapping={("A", "T1"): ["pop"]})
+    written = mod._tier2(db, net, top_n=0)
+    assert written == 0
+    assert net.track_calls == []
+
+
+def test_tier2_processes_top_n_by_play_count(tmp_path):
+    """Most-played tracks come first; tracks past top_n are not processed."""
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": f"spotify:track:{i:04d}", "artist_name": f"A{i}",
+         "track_name": f"T{i}"} for i in range(1, 6)
+    ])
+    # Inverse play counts: T1 has 1 play, T5 has 5 plays
+    _seed_plays(db, [(f"spotify:track:{i:04d}", i) for i in range(1, 6)])
+    net = _FakeNetwork({}, track_mapping={
+        (f"A{i}", f"T{i}"): [f"tag{i}"] for i in range(1, 6)
+    })
+
+    # top_n=2 should pick the 2 most-played: T5 (5 plays) and T4 (4 plays)
+    mod._tier2(db, net, top_n=2)
+
+    assert sorted(net.track_calls) == [("A4", "T4"), ("A5", "T5")]
+    enriched_uris = sorted(
+        row[0] for row in db.execute(
+            "SELECT spotify_track_uri FROM spotify_tracks WHERE lastfm_tags IS NOT NULL"
+        )
+    )
+    assert enriched_uris == ["spotify:track:0004", "spotify:track:0005"]
+
+
+def test_tier2_top_n_larger_than_available_processes_all(tmp_path):
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": "spotify:track:0001", "artist_name": "A1", "track_name": "T1"},
+        {"spotify_track_uri": "spotify:track:0002", "artist_name": "A2", "track_name": "T2"},
+    ])
+    _seed_plays(db, [("spotify:track:0001", 1), ("spotify:track:0002", 1)])
+    net = _FakeNetwork({}, track_mapping={
+        ("A1", "T1"): ["pop"],
+        ("A2", "T2"): ["rock"],
+    })
+    mod._tier2(db, net, top_n=999)
+    assert len(net.track_calls) == 2
+
+
+def test_tier2_wserror_writes_empty_array_continues(tmp_path):
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": "spotify:track:0001", "artist_name": "A1", "track_name": "T1"},
+        {"spotify_track_uri": "spotify:track:0002", "artist_name": "A2", "track_name": "T2"},
+    ])
+    _seed_plays(db, [("spotify:track:0001", 5), ("spotify:track:0002", 4)])
+    net = _FakeNetwork({}, track_mapping={
+        ("A1", "T1"): _ws_error(status="6", details="not found"),
+        ("A2", "T2"): ["jazz"],
+    })
+    mod._tier2(db, net, top_n=2)
+
+    rows = {r[0]: r[1] for r in db.execute(
+        "SELECT spotify_track_uri, lastfm_tags FROM spotify_tracks"
+    )}
+    assert rows["spotify:track:0001"] == "[]"          # miss -> empty array
+    assert json.loads(rows["spotify:track:0002"]) == ["jazz"]
+
+
+def test_tier2_idempotent_skips_already_enriched(tmp_path):
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": "spotify:track:0001", "artist_name": "A1", "track_name": "T1"},
+    ])
+    _seed_plays(db, [("spotify:track:0001", 5)])
+    net1 = _FakeNetwork({}, track_mapping={("A1", "T1"): ["pop"]})
+    mod._tier2(db, net1, top_n=10)
+    assert net1.track_calls == [("A1", "T1")]
+
+    # Second run: discovery filter (lastfm_tags IS NULL) excludes this URI
+    net2 = _FakeNetwork({}, track_mapping={("A1", "T1"): ["pop"]})
+    written = mod._tier2(db, net2, top_n=10)
+    assert written == 0
+    assert net2.track_calls == []
+
+
+def test_tier2_only_considers_tracks_in_spotify_tracks(tmp_path):
+    """Tracks in spotify_plays but missing from spotify_tracks are skipped.
+
+    Otherwise we'd try to UPDATE a non-existent row and silently no-op.
+    """
+    db = sqlite_utils.Database(tmp_path / "echo.db")
+    _seed_tracks(db, [
+        {"spotify_track_uri": "spotify:track:0001", "artist_name": "A1", "track_name": "T1"},
+    ])
+    # T2 is in spotify_plays but NOT in spotify_tracks (Spotify enrichment hasn't reached it)
+    _seed_plays(db, [
+        ("spotify:track:0001", 5),
+        ("spotify:track:0002", 100),  # heavily played but unenriched on Spotify side
+    ])
+    net = _FakeNetwork({}, track_mapping={("A1", "T1"): ["pop"]})
+    mod._tier2(db, net, top_n=10)
+
+    assert net.track_calls == [("A1", "T1")]  # only the in-spotify_tracks one
+
+
 # ── run() entry point ────────────────────────────────────────────────────────
 
 def _empty_config(tmp_path: Path, lastfm: str | None = None) -> EchoConfig:
@@ -371,6 +529,7 @@ def test_run_dry_run_skips_api_and_returns_zero(tmp_path, monkeypatch, capsys):
         {"spotify_track_uri": "spotify:track:0001", "artist_name": "Pritam", "track_name": "X"},
         pk="spotify_track_uri", replace=True,
     )
+    _seed_plays(db, [("spotify:track:0001", 5)])
 
     sentinel = {"constructed": False}
     class _Boom:
@@ -380,6 +539,18 @@ def test_run_dry_run_skips_api_and_returns_zero(tmp_path, monkeypatch, capsys):
 
     mod.run(cfg, dry_run=True)
     out = capsys.readouterr().out
-    assert "pending Tier 1" in out
+    assert "Tier 1 pending=" in out
     assert "dry-run" in out
     assert sentinel["constructed"] is False
+
+
+def test_run_skips_gracefully_when_spotify_plays_missing(tmp_path, capsys):
+    """Fresh install (no ingest yet) should skip cleanly, not crash."""
+    cfg = _empty_config(tmp_path, lastfm="fake-key")
+    db = sqlite_utils.Database(cfg.db_path)
+    mod.init_schema(db)  # creates spotify_tracks but NOT spotify_plays
+
+    mod.run(cfg)  # must not raise
+    out = capsys.readouterr().out
+    assert "spotify_plays not present" in out
+    assert "echo ingest" in out

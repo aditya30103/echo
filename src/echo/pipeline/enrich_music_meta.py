@@ -1,14 +1,20 @@
-"""Last.fm music metadata enrichment (Tier 1: per-artist tags).
+"""Last.fm music metadata enrichment (Tier 1 + Tier 2).
 
 Adds genre + mood + locale tags to spotify_tracks rows, sourced from the
 Last.fm community-tag vocabulary. Powers the new 5th lancedb table that
 makes cross-modal queries possible ("when was I in a melancholy phase, and
 what was I watching?"). See the Spotify Rework design doc for the full
-shape; this module implements Tier 1 only — Tier 2 (per-track for top-N)
-lands in a follow-up commit.
+shape.
 
-Inputs:  spotify_tracks.artist_name (echo.db)
-Outputs: spotify_tracks.artist_lastfm_tags + spotify_tracks.meta_enriched_at
+Two tiers, mirroring the power-law shape of personal music libraries:
+  Tier 1: artist.get_top_tags for every unique artist (~400-500 calls)
+  Tier 2: track.get_top_tags for the top-N most-played tracks (default 500)
+
+build_track_embed_text falls through Tier 2 -> Tier 1 -> name+artist only.
+
+Inputs:  spotify_tracks (artist_name + track_name) + spotify_plays (counts)
+Outputs: spotify_tracks.artist_lastfm_tags + spotify_tracks.lastfm_tags
+         + spotify_tracks.meta_enriched_at
 
 Idempotency: keyed by meta_enriched_at. Artists with at least one row whose
 meta_enriched_at IS NULL are eligible; a successful run sets it on every
@@ -23,7 +29,9 @@ enrich_spotify is intentional: Last.fm enrichment is genuinely optional;
 the rest of Echo's pipeline runs without it.
 
 Usage:
-    echo enrich-music-meta              # Tier 1 only (Phase B)
+    echo enrich-music-meta              # Tier 1 + Tier 2 (top-500 tracks)
+    echo enrich-music-meta --top-n 1000 # deeper Tier 2 coverage
+    echo enrich-music-meta --top-n 0    # Tier 1 only, skip Tier 2
     echo enrich-music-meta --dry-run    # show counts, no API calls
 """
 
@@ -225,6 +233,107 @@ def _tier1(db: sqlite_utils.Database, network: pylast.LastFMNetwork) -> int:
     return written
 
 
+# ── Tier 2: per-track enrichment for top-N most-played ──────────────────────
+
+def _tier2(db: sqlite_utils.Database, network: pylast.LastFMNetwork, top_n: int) -> int:
+    """Enrich the top-N most-played tracks with Last.fm track-level tags.
+
+    Skipped entirely when top_n=0. Only considers tracks that are in
+    spotify_tracks (have been Spotify-enriched) AND don't yet have
+    lastfm_tags. On WSError / 0-tags, writes "[]" so subsequent runs
+    don't re-attempt — Tier 2 misses are absorbed silently because
+    build_track_embed_text falls back to artist_lastfm_tags.
+
+    Returns the count of track enrichments written.
+    """
+    if top_n <= 0:
+        print("      Tier 2: skipped (top_n=0).")
+        return 0
+
+    # Tracks that are in spotify_tracks AND have non-null name/artist AND
+    # haven't been Tier 2'd yet. Joined with play counts from spotify_plays
+    # so we process the most-played first.
+    tracks = list(db.execute("""
+        SELECT t.spotify_track_uri,
+               t.track_name,
+               t.artist_name,
+               p.plays
+        FROM spotify_tracks t
+        JOIN (
+            SELECT spotify_track_uri, COUNT(*) AS plays
+            FROM spotify_plays
+            WHERE content_type = 'track' AND spotify_track_uri IS NOT NULL
+            GROUP BY spotify_track_uri
+        ) p ON t.spotify_track_uri = p.spotify_track_uri
+        WHERE t.track_name IS NOT NULL AND t.track_name != ''
+          AND t.artist_name IS NOT NULL AND t.artist_name != ''
+          AND t.lastfm_tags IS NULL
+        ORDER BY p.plays DESC
+        LIMIT ?
+    """, [top_n]))
+
+    total = len(tracks)
+    if total == 0:
+        print("      Tier 2: all top tracks already enriched.")
+        return 0
+
+    print(f"      Tier 2: {total} tracks to enrich (top-{top_n})")
+
+    pending_updates: list[tuple[str, str, str]] = []
+    written = 0
+    miss_count = 0
+    report_every = max(1, total // 20)
+
+    def _flush() -> int:
+        nonlocal pending_updates
+        if not pending_updates:
+            return 0
+        n = len(pending_updates)
+        with db.conn:
+            db.conn.executemany(
+                "UPDATE spotify_tracks "
+                "SET lastfm_tags = ?, meta_enriched_at = ? "
+                "WHERE spotify_track_uri = ?",
+                pending_updates,
+            )
+        pending_updates = []
+        return n
+
+    try:
+        for i, (uri, track_name, artist_name, _plays) in enumerate(tracks, 1):
+            tags_json: str = "[]"  # Tier 2 misses write empty array, not NULL
+            try:
+                track = network.get_track(artist_name, track_name)
+                top_items = _call_with_retry(lambda: track.get_top_tags(limit=10))
+                tags = [item.item.get_name() for item in top_items]
+                seen: set[str] = set()
+                deduped: list[str] = []
+                for tag in tags:
+                    if tag not in seen:
+                        seen.add(tag)
+                        deduped.append(tag)
+                tags_json = json.dumps(deduped, ensure_ascii=False)
+            except pylast.WSError:
+                miss_count += 1
+                # tags_json stays "[]" so the next run's discovery query
+                # (lastfm_tags IS NULL) excludes this URI.
+
+            now = datetime.now(timezone.utc).isoformat()
+            pending_updates.append((tags_json, now, uri))
+
+            if i % BATCH_FLUSH_EVERY == 0:
+                written += _flush()
+
+            if i % report_every == 0 or i == total:
+                pct = round(i / total * 100)
+                print(f"      [{pct:3d}%] Tier 2: {i}/{total}  misses={miss_count}")
+    finally:
+        written += _flush()
+        print(f"      Tier 2: +{written} track enrichments written, {miss_count} misses")
+
+    return written
+
+
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 def run(config: EchoConfig, dry_run: bool = False, top_n: int = 500) -> None:
@@ -247,6 +356,13 @@ def run(config: EchoConfig, dry_run: bool = False, top_n: int = 500) -> None:
     db = sqlite_utils.Database(config.db_path)
     init_schema(db)
 
+    # spotify_plays is created by ingest.py. If it doesn't exist, we have
+    # nothing to enrich - skip the entire module rather than crashing.
+    if "spotify_plays" not in db.table_names():
+        print("music_meta: spotify_plays not present; run `echo ingest` first.")
+        print("Continuing pipeline...")
+        return
+
     pending_tier1 = db.execute("""
         SELECT COUNT(DISTINCT artist_name)
         FROM spotify_tracks
@@ -254,30 +370,52 @@ def run(config: EchoConfig, dry_run: bool = False, top_n: int = 500) -> None:
           AND artist_name != ''
           AND meta_enriched_at IS NULL
     """).fetchone()[0]
+    pending_tier2 = db.execute("""
+        SELECT COUNT(*)
+        FROM spotify_tracks t
+        JOIN (
+            SELECT spotify_track_uri, COUNT(*) AS plays
+            FROM spotify_plays
+            WHERE content_type = 'track' AND spotify_track_uri IS NOT NULL
+            GROUP BY spotify_track_uri
+        ) p ON t.spotify_track_uri = p.spotify_track_uri
+        WHERE t.track_name IS NOT NULL AND t.artist_name IS NOT NULL
+          AND t.lastfm_tags IS NULL
+    """).fetchone()[0]
+    # Tier 2 actual work = min(pending_tier2, top_n)
+    will_tier2 = 0 if top_n <= 0 else min(pending_tier2, top_n)
 
-    print(f"music_meta: {pending_tier1} artists pending Tier 1 (top_n={top_n} reserved for Tier 2)")
+    print(f"music_meta: Tier 1 pending={pending_tier1} artists; "
+          f"Tier 2 pending={pending_tier2} tracks, will process top {will_tier2}")
 
     if dry_run:
         print("[dry-run] no API calls made")
         return
 
-    if pending_tier1 == 0:
+    if pending_tier1 == 0 and will_tier2 == 0:
         print("Nothing to do.")
         return
 
     network = pylast.LastFMNetwork(api_key=api_key)
-    # pylast does NOT auto-throttle by default. Without this, ~900 sequential
+    # pylast does NOT auto-throttle by default. Without this, sequential
     # calls would burst above the published 5 req/s ceiling and get 429s.
     network.enable_rate_limit()
+
     _tier1(db, network)
+    _tier2(db, network, top_n)
 
     enriched_artists = db.execute("""
         SELECT COUNT(DISTINCT artist_name)
         FROM spotify_tracks
         WHERE artist_lastfm_tags IS NOT NULL
     """).fetchone()[0]
+    enriched_tracks = db.execute("""
+        SELECT COUNT(*)
+        FROM spotify_tracks
+        WHERE lastfm_tags IS NOT NULL AND lastfm_tags != '[]'
+    """).fetchone()[0]
     print()
-    print(f"Done. spotify_tracks artists with tags: {enriched_artists}")
+    print(f"Done. Artists with tags: {enriched_artists}; tracks with track-level tags: {enriched_tracks}")
 
 
 def main() -> None:
