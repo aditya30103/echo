@@ -677,7 +677,7 @@
 	}
 	.model-btn:last-child { border-right: none; }
 	.model-btn:hover:not(:disabled) { background: var(--surface-1); color: var(--text-secondary); }
-	.model-btn.active { background: var(--surface-1); color: var(--text-primary); }
+	.model-btn.active { background: var(--surface-1); color: var(--accent); }
 	.model-btn:disabled { opacity: 0.4; cursor: default; }
 
 	.run-btn {
@@ -959,9 +959,9 @@
 		padding: 0 0 0 1rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.45rem;
 	}
-	.side-insights li { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; }
+	.side-insights li { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.6; }
 	.external-finding { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
 
 	.synthesis-error {

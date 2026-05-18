@@ -5,6 +5,87 @@ pick up without re-reading the session that produced it.
 
 ---
 
+## Design Overhaul — deferred from soul transplant session (2026-05-18)
+
+Soul transplant shipped: amber palette, Lora/Geist Mono dual typeface, CSS token system,
+touch targets, all component color passes. Design score C → B, AI Slop C → A.
+
+These items were explicitly deferred — they require layout changes, not just CSS token
+swaps, and belong in a dedicated design session.
+
+### FINDING-011 — Model selector behind Advanced toggle
+
+**What:** The Auto / Claude / GPT-4o model selector is always visible in the query
+controls bar. It's an advanced control that most users will never touch after their
+first session. Hide it behind an "Advanced ›" disclosure toggle.
+
+**Why:** The query card's primary job is to invite investigation, not surface model
+selection. The selector adds cognitive load on first load and competes with the
+textarea + Investigate button for attention.
+
+**Approach:** Wrap the `.model-toggle` and `.rounds-label` in a collapsed `<details>`
+or a toggle state variable. Show only a dim "Advanced ›" label when closed. Expand
+inline when clicked. Persist collapsed state in `localStorage` so power users don't
+have to re-open every session.
+
+**Source:** Design identity doc (2026-05-18), explicitly deferred.
+
+---
+
+### FINDING-012 — Ask Echo controls layout restructure
+
+**What:** The Ask Echo tab (RAG chat) has a control layout that doesn't match the
+visual language established by the soul transplant. The input area and submit controls
+need the same card-in-void treatment the Echo Speaks card got.
+
+**Why:** Consistency across tabs. Echo Speaks looks finished; Ask Echo looks like it
+wasn't in scope (it wasn't — correctly deferred).
+
+**Approach:** Apply the same `.query-panel` card structure (surface-0 bg, border,
+padding, Lora textarea) to the Ask Echo input. Confirm touch targets on submit. Run
+a design review pass after.
+
+**Source:** Design identity doc (2026-05-18), explicitly deferred.
+
+---
+
+### FINDING-013 — Mobile layout
+
+**What:** No mobile-specific layout work was done in the soul transplant session beyond
+touch targets (44px min-height on all interactive elements). The Agency Map table and
+Binge Sessions card list likely overflow or compress poorly on narrow viewports.
+
+**Why:** Echo's public debut means friends will try it on mobile. The Agency Map table
+is the highest risk — horizontal bar charts and wide tables are known overflow candidates.
+
+**Approach:** Add a `@media (max-width: 640px)` pass. Agency Map: stack or horizontally
+scroll the table. Binge Sessions: verify card layout collapses to single-column cleanly.
+Nav tabs: confirm they don't wrap awkwardly. Run a design review at 375px viewport.
+
+**Source:** Design identity doc (2026-05-18), explicitly deferred.
+
+---
+
+### FINDING-014 — Animation and motion
+
+**What:** No transitions exist on view switches, finding reveals, or the round trace
+expanding/collapsing. The UI snaps between states with no motion.
+
+**Why:** The soul transplant established a strong static identity. Motion is the next
+layer — used conservatively, it reinforces the "slow reveal from a drawer" metaphor.
+Used carelessly, it makes the product feel like a SaaS dashboard.
+
+**Approach:** Two candidates worth doing, nothing else:
+1. `finding-item` entrance — a subtle fade-in (opacity 0→1, 150ms ease) as each
+   finding arrives during streaming. The findings appearing one by one already has
+   narrative weight; a fade amplifies it.
+2. View transition — a 100ms opacity cross-fade when switching nav tabs.
+Avoid slide animations, bounce, or anything that draws attention to itself.
+
+**Source:** Design identity doc (2026-05-18), explicitly deferred.
+
+---
+
 ## NOTE: Packaging session 1 + 2 — completion summary
 
 **Status:** `packaging-v1` branch is feature-complete for the packaged-CLI

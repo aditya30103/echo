@@ -209,7 +209,7 @@
 		<section>
 			<div class="view-header">
 				<h2>Binge Sessions</h2>
-				<span class="dim" style="font-size:0.75rem">Sessions of 5+ consecutive videos (≤30 min gap)</span>
+				<span class="view-descriptor">Sessions of 5+ consecutive videos (≤30 min gap)</span>
 			</div>
 			{#if sessionsLoading}
 				<p class="status">Loading…</p>
@@ -273,7 +273,7 @@
 		<section>
 			<div class="view-header">
 				<h2>Agency Map</h2>
-				<span class="dim" style="font-size:0.75rem">How you found content — searched vs passive — by chapter</span>
+				<span class="view-descriptor">How you found content — searched vs passive — by chapter</span>
 			</div>
 			{#if agencyLoading}
 				<p class="status">Loading…</p>
@@ -325,7 +325,7 @@
 		<section class="chat-section">
 			<div class="view-header">
 				<h2>Ask Echo</h2>
-				<span class="dim" style="font-size:0.75rem">RAG across your watch history, arcs, and search queries</span>
+				<span class="view-descriptor">RAG across your watch history, arcs, and search queries</span>
 			</div>
 
 			<!-- Controls row -->
@@ -428,7 +428,7 @@
 		<section>
 			<div class="view-header">
 				<h2>Echo Speaks</h2>
-				<span class="dim" style="font-size:0.75rem">Autonomous agentic analysis</span>
+				<span class="view-descriptor">Autonomous agentic analysis</span>
 			</div>
 			<SpeakView />
 		</section>
@@ -483,6 +483,13 @@
 		flex-wrap: wrap;
 	}
 	h2 { margin: 0; font-size: 1.3rem; color: var(--text-bright); font-family: 'Geist Mono', monospace; }
+	.view-descriptor {
+		font-size: 0.65rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
 	.dim { color: var(--text-muted); font-weight: 400; }
 	.count { font-size: 0.75rem; color: var(--text-muted); }
 
