@@ -843,6 +843,7 @@
 		padding: 0.4rem 0.75rem;
 		border-radius: 6px;
 		font-size: 0.78rem;
+		font-family: 'Lora', serif;
 		cursor: pointer;
 		text-align: left;
 		transition: border-color 0.15s, color 0.15s;
