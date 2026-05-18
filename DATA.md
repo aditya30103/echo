@@ -211,12 +211,16 @@ Populated by `enrich_spotify.py` (optional step, requires Spotify Developer app 
 | mode | INTEGER | 1 = major key, 0 = minor key (NULL if app registered after Nov 2024) |
 | musical_key | INTEGER | Pitch class 0–11 (C=0, C#=1, …, B=11). Named `musical_key` to avoid SQLite reserved word `key`. (NULL if app registered after Nov 2024) |
 | audio_features_available | INTEGER | 1 = audio features were fetched; 0 = 403 returned (deprecated for this app) |
-| fetched_at | TEXT | UTC timestamp of enrichment |
+| fetched_at | TEXT | UTC timestamp of Spotify enrichment |
+| artist_lastfm_tags | TEXT | JSON array of Last.fm artist-level top tags, e.g. `["bollywood","Hindi","Indian"]`. Populated by `enrich_music_meta.py` Tier 1. NULL means Tier 1 failed for this artist (still meta_enriched_at is set so we don't retry). |
+| lastfm_tags | TEXT | JSON array of Last.fm track-level top tags. Populated by `enrich_music_meta.py` Tier 2 for the top-N most-played tracks only. NULL means Tier 2 hasn't run for this track. `"[]"` means Tier 2 ran but found nothing (or pylast.WSError'd). |
+| meta_enriched_at | TEXT | UTC ISO timestamp when this row was last touched by `enrich_music_meta.py`. NULL = never touched. Distinct from `fetched_at` (Spotify enrichment timestamp). |
 
 **Join to plays:** `spotify_tracks.spotify_track_uri = spotify_plays.spotify_track_uri`
 **Completion ratio:** `CAST(spotify_plays.ms_played AS REAL) / spotify_tracks.duration_ms` (clamp to 1.0 max — some plays slightly exceed duration due to buffering)
 **Genre analysis:** `json_each(genres)` to unnest the array in SQLite: `SELECT value FROM json_each(genres)`
-**Audio features:** NULL for apps registered after November 2024. `audio_features_available=0` marks these rows. Columns are kept in schema for forward compatibility.
+**Audio features:** NULL for apps registered after November 2024. `audio_features_available=0` marks these rows.
+**Last.fm tags vs Spotify genres:** Spotify's `genres` column is curated taxonomy from the artist record; `artist_lastfm_tags` is community-tagged vocabulary (broader: genre + mood + locale + era). For mood queries prefer the Last.fm columns; for clean genre filters prefer `genres`. Columns are kept in schema for forward compatibility.
 
 ---
 

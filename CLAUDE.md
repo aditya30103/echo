@@ -39,8 +39,10 @@ Design doc for packaging: `~/.gstack/projects/Echo/Aditya Arya-master-design-pac
 Scripts run in this exact order. Each depends on the previous.
 
 ```
-ingest.py → enrich.py → detect.py → signals.py → reflect.py → embed.py
+ingest → enrich → enrich-spotify → enrich-music-meta → detect → signals → reflect → embed
 ```
+
+(`enrich-spotify` and `enrich-music-meta` are optional; both are fail-soft on missing keys and `echo run` continues past them.)
 
 See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column means.
 
@@ -95,11 +97,12 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
 |------------|---------|
 | `ingest.py` | Loads Takeout + Spotify zips into echo.db (8 tables) |
 | `enrich.py` | YouTube Data API enrichment (video_metadata) |
-| `enrich_spotify.py` | Spotify Web API enrichment (spotify_tracks) |
+| `enrich_spotify.py` | Spotify Web API enrichment (spotify_tracks: duration, explicit, URI verify) |
+| `enrich_music_meta.py` | Last.fm tag enrichment (artist + top-N track tags; mood/genre dimension for cross-modal agent queries) |
 | `detect.py` | PELT changepoint detection → chapters + chapter_fingerprints |
 | `signals.py` | Engagement scoring → watch_signals + spotify_signals |
 | `reflect.py` | GPT-4o narrative reflection → reflections (reads private/annotations.yaml) |
-| `embed.py` | LanceDB vector embedding → 4 tables (reflections, videos, searches, google_searches) |
+| `embed.py` | LanceDB vector embedding → 5 tables (reflections, videos, searches, google_searches, spotify_tracks) |
 | `embed_common.py` | Shared embedding utilities (load_env, get_embed_client, ALL_TABLES) |
 | `viewer.py` | Static HTML viewer for chapter reflections (proofreading tool) |
 | `run.bat` / `run.sh` | One-line Datasette launchers (Windows / *nix) |

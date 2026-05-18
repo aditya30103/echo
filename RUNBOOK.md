@@ -29,6 +29,7 @@ for each one). For the canonical list and what each is used for, see
 | `OPENROUTER_API_KEY` | reflect / embed / agent alternative path |
 | `ANTHROPIC_API_KEY` | Echo Speaks agent (primary; best prompt caching) |
 | `SPOTIFY_CLIENT_ID` + `_SECRET` | `echo enrich-spotify` (optional) |
+| `LASTFM_API_KEY` | `echo enrich-music-meta` (optional; powers mood/genre dimension and cross-modal agent queries) |
 | `SPOTIFY_ZIP` | `echo ingest` — filename of Spotify zip inside `~/.echo/_data/` (defaults to `my_spotify_data.zip`) |
 | `UNSAFE_PYTHON_SANDBOX` | Echo Speaks `execute_python` tool (set `"true"` to enable; default `false`) |
 | `LANGFUSE_PUBLIC_KEY`, `_SECRET_KEY`, `_HOST` | Echo Speaks observability (all optional; falls back to noop) |
@@ -41,17 +42,19 @@ for each one). For the canonical list and what each is used for, see
 Scripts must run in this order. Each step depends on the previous.
 
 ```
-ingest.py → enrich.py → detect.py → signals.py → reflect.py → embed.py
+ingest → enrich → enrich-spotify → enrich-music-meta → detect → signals → reflect → embed
 ```
 
-| Step | Script | Reads | Writes | Idempotent? |
-|------|--------|-------|--------|-------------|
-| 1 | `ingest.py` | 3 YouTube/Activity zip files + Spotify zip | watches, yt_searches, watch_later, google_searches, discover_feed, calendar_events, transactions, spotify_plays | Yes — UNIQUE constraints |
-| 2 | `enrich.py` | watches | video_metadata | Yes — skips already-fetched videos |
-| 3 | `detect.py` | watches, video_metadata | chapters, chapter_fingerprints | Yes — drops and recomputes |
-| 4 | `signals.py` | watches, yt_searches, watch_later, spotify_plays | watch_signals, spotify_signals | Yes — drops and recomputes |
-| 5 | `reflect.py` | all tables | reflections | Yes — appends new rows |
-| 6 | `embed.py` | echo.db (reflections, videos, yt_searches, google_searches) | lancedb/ (4 tables) | Yes — drops and recreates each table |
+| Step | Command | Reads | Writes | Idempotent? |
+|------|---------|-------|--------|-------------|
+| 1 | `echo ingest` | 3 YouTube/Activity zip files + Spotify zip | watches, yt_searches, watch_later, google_searches, discover_feed, calendar_events, transactions, spotify_plays | Yes — UNIQUE constraints |
+| 2 | `echo enrich` | watches | video_metadata | Yes — skips already-fetched videos |
+| 2b | `echo enrich-spotify` (optional) | spotify_plays | spotify_tracks (duration_ms, explicit, uri_verified) | Yes — LEFT JOIN skips enriched URIs |
+| 2c | `echo enrich-music-meta` (optional) | spotify_tracks, spotify_plays | spotify_tracks (artist_lastfm_tags, lastfm_tags, meta_enriched_at) | Yes — meta_enriched_at filter skips done rows |
+| 3 | `echo detect` | watches, video_metadata | chapters, chapter_fingerprints | Yes — drops and recomputes |
+| 4 | `echo signals` | watches, yt_searches, watch_later, spotify_plays | watch_signals, spotify_signals | Yes — drops and recomputes |
+| 5 | `echo reflect` | all tables | reflections | Yes — appends new rows |
+| 6 | `echo embed` | echo.db (5 corpora) | lancedb/ (5 tables: reflections, videos, searches, google_searches, spotify_tracks) | Yes — drops and recreates each table |
 
 ### Step 1 — Ingest
 
@@ -95,6 +98,40 @@ Fetches in three passes:
 
 Safe to interrupt and re-run — already-enriched URIs are skipped.
 ~4,342 unique tracks → ~90 batch calls → completes in ~3 minutes.
+
+> **Note on Spotify daily quota:** Spotify Web API apps registered after
+> November 2024 hit a soft daily ceiling of ~650 search calls. Full
+> enrichment of a 4,300-track library takes ~6-7 drip-feed days. The
+> batch-flush in `enrich_spotify.py` makes partial progress safe — every
+> 50 enriched tracks land in the DB before the next API call, so a quota
+> wall mid-run discards nothing.
+
+### Step 1c — Enrich music meta via Last.fm (optional)
+
+```bash
+echo enrich-music-meta              # Tier 1 (per-artist) + Tier 2 (top-500 tracks)
+echo enrich-music-meta --dry-run    # show counts, no API calls
+echo enrich-music-meta --top-n 1000 # deeper Tier 2 coverage
+echo enrich-music-meta --top-n 0    # Tier 1 only, skip Tier 2
+```
+
+Requires `LASTFM_API_KEY` in `.env`. Register a free app at
+`last.fm/api/account/create` (instant, no review).
+
+Two tiers:
+1. **Tier 1 (per-artist):** Fetches top community tags for every unique
+   artist in `spotify_tracks`. ~400-500 calls. Writes `artist_lastfm_tags`
+   to all rows for each artist.
+2. **Tier 2 (per-track, top-N):** Fetches top tags for the N most-played
+   tracks (default 500). Writes `lastfm_tags` to those rows.
+
+The agent's `vector_search` over the new lancedb `spotify_tracks` table
+uses track-level tags when present, falls back to artist-level. This is
+what powers cross-modal queries like "when was I in a melancholy phase
+and what was I watching at the same time?"
+
+Fail-soft on missing key: if `LASTFM_API_KEY` is unset, the step prints
+a setup link and continues to the next pipeline step (no `sys.exit(1)`).
 
 ### Step 2 — Enrich YouTube
 

@@ -387,17 +387,37 @@ ratio computation and enables the Spotify lancedb embedding (Phase 3b below).
 
 ---
 
-## TODO: Spotify Phase 3b — embed spotify_tracks into lancedb
+## ~~TODO: Spotify Phase 3b — embed spotify_tracks into lancedb~~ — REPLACED
 
-**What:** Add `embed_spotify_tracks()` to `embed.py`. Embed `"track_name | artist_name"` strings
-from `spotify_tracks` into a new lancedb `spotify_tracks` table. Wire into agent `vector_search`
-dispatch in `api/tools/search.py`.
+Superseded 2026-05-18 by the Spotify Rework design (`~/.gstack/projects/Echo/Aditya Arya-master-design-spotify-rework-20260517-231729.md`). The original Phase 3b assumed `"track_name | artist_name"` strings as the embedding text. The rework adds Last.fm mood/genre tags as the actual dimension that makes cross-modal queries useful, and lands the embedding via `enrich-music-meta` + `embed.py` extension across phases A-F.
 
-**Why:** Lets the agent answer "find tracks similar to X" or "what was I listening to around the
-same time as [YouTube topic]?" via semantic search — right now Spotify is SQL-only.
+Shipped: `enrich_music_meta.py` with Tier 1 + Tier 2, `spotify_tracks` as the 5th lancedb table, fail-soft on missing key, batch-flush resilience.
 
-**Blocked by:** Phase 2 (enrich_spotify.py) must complete first so `spotify_tracks` has populated
-`track_name` and `artist_name` rows to embed.
+---
+
+## TODO: Spotify-genres follow-up (deferred from rework)
+
+**What:** If the Last.fm tag vocabulary turns out too noisy for cross-modal queries in practice, add a follow-up step that hits Spotify `/artists/{id}` for the curated genre taxonomy. Depends on capturing `artists[0].uri` from Spotify search responses during `enrich-spotify` (a 2-line change).
+
+**Why:** Skipped from v1 because it reintroduces Spotify quota dependency and the artist-URI sourcing problem that the Last.fm-only path was designed to avoid. Add only if real agent queries show Last.fm noise harming recall.
+
+**Trigger:** Run a `/qa` pass against cross-modal mood queries after `enrich-music-meta` has been in place for ~1 week. If recall is good, skip permanently.
+
+---
+
+## TODO: Per-play tag materialization on spotify_signals
+
+**What:** Add `primary_tag_at_play` and `primary_genre_at_play` columns to `spotify_signals` (or to a small per-play view). Materializes the JOIN `spotify_signals -> spotify_tracks` at signal-computation time.
+
+**Why:** SQL-driven mood filters ("show me sessions where I was listening to melancholy music") currently require a 3-way join. Materializing the dominant tag per-play makes those queries one table read. Defer until SQL-driven mood filters become a hot path in agent traces.
+
+---
+
+## TODO: LAION-CLAP audio embeddings
+
+**What:** Replace text-embedding-3-small for `spotify_tracks` with joint audio↔text via `laion/clap-htsat-unfused`. Embed Spotify 30-second preview clips into the same vector space as text queries.
+
+**Why:** Coolest cross-modal play (no API at all; the audio itself participates). Depends on Spotify `/audio-preview` URL availability, which is rights-dependent and covers ~40-60% of tracks. Week-scale work; deferred to a future design session entirely. Captured here so it's not lost.
 
 ---
 

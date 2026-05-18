@@ -157,6 +157,12 @@ echo reflect --dry-run --autobiography     # prints the autobiography prompt
 echo run --skip-enrich-spotify
 ```
 
+**To skip Last.fm music-meta enrichment** (mood/genre dimension; requires a free `LASTFM_API_KEY`):
+```bash
+echo run --skip-enrich-music-meta
+```
+If `LASTFM_API_KEY` is unset, this step is skipped automatically with a one-line setup hint. Get a free key at `last.fm/api/account/create` (instant, no review) to unlock cross-modal mood queries like "when was I in a melancholy phase, and what was I watching at the same time?"
+
 ---
 
 ## 6. Browse / query your data
