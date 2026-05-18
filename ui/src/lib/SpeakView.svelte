@@ -674,6 +674,7 @@
 		font-weight: 600;
 		padding: 0 0.55rem;
 		min-height: 44px;
+		min-width: 44px;
 		cursor: pointer;
 		transition: background 0.12s, color 0.12s;
 		white-space: nowrap;

@@ -264,7 +264,6 @@
 						</div>
 					{/each}
 				</div>
-				</div>
 			{/if}
 		</section>
 	{/if}
@@ -317,6 +316,7 @@
 							</div>
 						</div>
 					{/each}
+				</div>
 				</div>
 			{/if}
 		</section>
