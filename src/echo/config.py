@@ -326,25 +326,38 @@ def load_env() -> None:
         os.environ.setdefault(key, value)
 
 
-def get_embed_client():
-    """Legacy: returns (openai_client, model_name) prefering OPENAI_API_KEY.
+def get_embed_client(config: "EchoConfig | None" = None):
+    """Returns (openai_client, model_name) preferring OPENAI_API_KEY.
 
-    Kept for api/ modules that still import from embed_common. Real impl
-    lives in `echo.pipeline.embed_common` after P2.3.
+    Resolution order:
+      1. EchoConfig.api_keys (if config passed; this is the modern path that
+         reads ~/.echo/.env via load_config())
+      2. os.environ (legacy path for callers that pre-populated env)
+
+    The legacy os.environ path is preserved for api/ modules that still
+    call load_env() into the process env before invoking us.
     """
     try:
         import openai
     except ImportError:
         raise RuntimeError("openai package not installed. Run: pip install openai")
 
-    if (key := os.environ.get("OPENAI_API_KEY")):
-        return openai.OpenAI(api_key=key), "text-embedding-3-small"
+    openai_key: str | None = None
+    openrouter_key: str | None = None
+    if config is not None:
+        openai_key = config.api_keys.openai
+        openrouter_key = config.api_keys.openrouter
+    openai_key = openai_key or os.environ.get("OPENAI_API_KEY")
+    openrouter_key = openrouter_key or os.environ.get("OPENROUTER_API_KEY")
 
-    if (or_key := os.environ.get("OPENROUTER_API_KEY")):
-        return openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1"), "openai/text-embedding-3-small"
+    if openai_key:
+        return openai.OpenAI(api_key=openai_key), "text-embedding-3-small"
+
+    if openrouter_key:
+        return openai.OpenAI(api_key=openrouter_key, base_url="https://openrouter.ai/api/v1"), "openai/text-embedding-3-small"
 
     raise RuntimeError(
-        "No embedding API key found. Add OPENAI_API_KEY or OPENROUTER_API_KEY to .env."
+        "No embedding API key found. Add OPENAI_API_KEY or OPENROUTER_API_KEY to ~/.echo/.env."
     )
 
 

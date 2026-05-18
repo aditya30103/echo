@@ -273,7 +273,7 @@ def run(config: EchoConfig, dry_run: bool = False, table: str | None = None) -> 
             print()
         return
 
-    client, model = get_embed_client()
+    client, model = get_embed_client(config)
     print(f"Provider: {model}\n")
 
     ldb = lancedb.connect(str(config.lancedb_path))
