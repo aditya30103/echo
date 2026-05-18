@@ -52,6 +52,7 @@ _KNOWN_ENV_KEYS: tuple[str, ...] = (
     "SPOTIFY_CLIENT_ID",
     "SPOTIFY_CLIENT_SECRET",
     "SPOTIFY_ZIP",
+    "LASTFM_API_KEY",
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_HOST",
@@ -89,6 +90,7 @@ class APIKeys:
     anthropic: str | None = None             # ANTHROPIC_API_KEY (Echo Speaks primary)
     spotify_client_id: str | None = None     # SPOTIFY_CLIENT_ID (enrich_spotify.py)
     spotify_client_secret: str | None = None # SPOTIFY_CLIENT_SECRET (enrich_spotify.py)
+    lastfm: str | None = None                # LASTFM_API_KEY (enrich_music_meta.py)
     langfuse_public: str | None = None       # LANGFUSE_PUBLIC_KEY (observability)
     langfuse_secret: str | None = None       # LANGFUSE_SECRET_KEY (observability)
 
@@ -289,6 +291,7 @@ def _apply_env_value(cfg: EchoConfig, key: str, value: str) -> None:
         case "ANTHROPIC_API_KEY":      cfg.api_keys.anthropic = value
         case "SPOTIFY_CLIENT_ID":      cfg.api_keys.spotify_client_id = value
         case "SPOTIFY_CLIENT_SECRET": cfg.api_keys.spotify_client_secret = value
+        case "LASTFM_API_KEY":         cfg.api_keys.lastfm = value
         case "LANGFUSE_PUBLIC_KEY":    cfg.api_keys.langfuse_public = value
         case "LANGFUSE_SECRET_KEY":    cfg.api_keys.langfuse_secret = value
         case "SPOTIFY_ZIP":

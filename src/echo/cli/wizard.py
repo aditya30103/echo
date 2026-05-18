@@ -168,6 +168,7 @@ def _render_env(cfg: EchoConfig) -> str:
         ("ANTHROPIC_API_KEY",      cfg.api_keys.anthropic),
         ("SPOTIFY_CLIENT_ID",      cfg.api_keys.spotify_client_id),
         ("SPOTIFY_CLIENT_SECRET",  cfg.api_keys.spotify_client_secret),
+        ("LASTFM_API_KEY",         cfg.api_keys.lastfm),
         ("LANGFUSE_PUBLIC_KEY",    cfg.api_keys.langfuse_public),
         ("LANGFUSE_SECRET_KEY",    cfg.api_keys.langfuse_secret),
     ]
