@@ -38,6 +38,7 @@ dependencies = [
   "google-api-python-client>=2.130.0",
   "icalendar>=5.0.0",
   "duckduckgo-search>=6.0.0",
+  "pylast>=5.0",  # Last.fm SDK for enrich_music_meta (mood/genre tags)
   # Vector store + embeddings
   "lancedb>=0.30.0",
   # LLM providers
