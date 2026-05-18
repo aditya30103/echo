@@ -1,6 +1,7 @@
 <script lang="ts">
 	import RoundPillStrip from './RoundPillStrip.svelte';
 	import CostFooter from './CostFooter.svelte';
+	import SourceChip from './SourceChip.svelte';
 
 	type Finding = {
 		claim: string;
@@ -459,7 +460,7 @@
 
 							{#if r.observation}
 								<div class="round-obs">
-									<span class="obs-tag" style="color:{TAG_COLOR[r.source_tag] ?? '#6b5a45'}">[{r.source_tag}]</span>
+									<SourceChip label="[{r.source_tag}]" color="{TAG_COLOR[r.source_tag] ?? '#6b5a45'}" />
 									<pre class="obs-text">{r.observation.replace(/^\[[A-Z-]+\]\s*/, '')}</pre>
 								</div>
 							{:else if !r.done && r.tool}
@@ -493,7 +494,7 @@
 						<li class="finding-item" style="animation-delay: {i * 40}ms">
 							<div class="finding finding-accordion" onclick={() => toggleFinding(i)}>
 								<div class="finding-meta">
-									<span class="finding-tag" style="color:{TAG_COLOR[f.source_tag] ?? '#6b5a45'}">[{f.source_tag}]</span>
+									<SourceChip label="[{f.source_tag}]" color="{TAG_COLOR[f.source_tag] ?? '#6b5a45'}" />
 									<span class="finding-conf" style="color:{CONF_COLOR[f.confidence] ?? '#6b5a45'}">{f.confidence}</span>
 									{#if f.narrative_derived}
 										<span class="finding-warn">narrative-derived</span>
@@ -811,7 +812,6 @@
 	}
 
 	.round-obs { display: flex; flex-direction: column; gap: 0.3rem; }
-	.obs-tag { font-size: 0.65rem; font-weight: 700; }
 	.obs-text {
 		margin: 0;
 		font-size: 0.75rem;
@@ -878,7 +878,6 @@
 		align-items: center;
 		gap: 0.5rem;
 	}
-	.finding-tag { font-size: 0.65rem; font-weight: 700; border: 1px solid var(--signal-cold-dim); padding: 0.1rem 0.35rem; border-radius: 3px; }
 	.finding-conf { font-size: 0.65rem; font-weight: 600; text-transform: capitalize; }
 	.finding-warn {
 		font-size: 0.65rem;

@@ -85,6 +85,24 @@ Avoid slide animations, bounce, or anything that draws attention to itself.
 
 ---
 
+## Design System — ✓ SHIPPED (2026-05-18)
+
+Formal design system locked down after the soul transplant session.
+
+- **`DESIGN.md`** at repo root — canonical design reference. Philosophy, color tokens,
+  typography rules, component patterns, two-temperature principle, what never changes.
+  Authoritative for all future contributors.
+- **`ui/src/lib/SourceChip.svelte`** — source provenance chips. Encodes the
+  `--signal-cold-dim` border rule in code. Used in Echo Speaks findings and round
+  observations. All future source tags must use this component.
+- **`ui/src/lib/SessionCard.svelte`** — binge session card. Encodes Lora depth number,
+  accent bar fill, and badge color semantics (searched=cold, autoplay=muted,
+  rewatch=amber) in one place.
+
+Both components extracted from inline markup and CSS; SpeakView and +page.svelte updated.
+
+---
+
 ## NOTE: Packaging session 1 + 2 — completion summary
 
 **Status:** `packaging-v1` branch is feature-complete for the packaged-CLI

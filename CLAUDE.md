@@ -114,6 +114,7 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
 | `annotations.example.yaml` | Template — copy to `private/annotations.yaml` to add LIFE CONTEXT |
 | `metadata.yaml` | Datasette query definitions (sanitized; no personal refs) |
 | `LICENSE` | MIT |
+| `DESIGN.md` | Visual design system — two-temperature principle, color tokens, typography, component patterns. Read before touching any UI. |
 | `CLAUDE.md` / `AGENTS.md` | AI context (AGENTS.md is a stub; CLAUDE.md is source of truth) |
 | `SETUP.md` | Onboarding (will be rewritten in the packaging session) |
 | `RUNBOOK.md` | How to operate the pipeline |
