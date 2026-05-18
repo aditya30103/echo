@@ -649,7 +649,7 @@
 		padding: 1.5rem;
 		text-align: center;
 		color: var(--text-muted);
-		border: 1px dashed var(--border);
+		border: 1px solid var(--border);
 		border-radius: 8px;
 	}
 	.chat-empty p { margin: 0 0 1rem; font-size: 0.85rem; font-family: 'Lora', serif; font-style: italic; color: var(--text-secondary); }
