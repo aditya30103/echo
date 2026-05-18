@@ -264,6 +264,7 @@
 						</div>
 					{/each}
 				</div>
+				</div>
 			{/if}
 		</section>
 	{/if}
@@ -280,6 +281,7 @@
 			{:else if agencyError}
 				<p class="error">{agencyError}</p>
 			{:else}
+				<div class="agency-table-scroll">
 				<div class="agency-table">
 					<div class="agency-header">
 						<span>Chapter</span>
@@ -616,10 +618,14 @@
 	}
 
 	/* ── agency map ──────────────────────────────────────────────────── */
-	.agency-table {
+	.agency-table-scroll {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
 		border: 1px solid var(--border);
 		border-radius: 8px;
-		overflow: hidden;
+	}
+	.agency-table {
+		min-width: 600px;
 		font-size: 0.8rem;
 	}
 
