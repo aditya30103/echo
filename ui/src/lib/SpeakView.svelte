@@ -634,7 +634,7 @@
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
-		color: var(--text-muted);
+		color: var(--text-secondary);
 		font-size: 0.875rem;
 		font-family: 'Lora', serif;
 		padding: 0.6rem 0.75rem;

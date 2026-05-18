@@ -666,7 +666,7 @@
 	.suggestion {
 		background: var(--surface-0);
 		border: 1px solid var(--border);
-		color: var(--text-muted);
+		color: var(--text-secondary);
 		padding: 0.4rem 0.75rem;
 		border-radius: 6px;
 		font-size: 0.78rem;
