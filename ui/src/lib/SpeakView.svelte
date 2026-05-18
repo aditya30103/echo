@@ -54,6 +54,15 @@
 	let query        = $state('');
 	let maxRounds    = $state(20);
 	let selectedModel = $state<'auto' | 'claude' | 'gpt4o'>('auto');
+	let showAdvanced = $state(false);
+
+	$effect(() => {
+		const saved = localStorage.getItem('echo-advanced-open');
+		if (saved === 'true') showAdvanced = true;
+	});
+	$effect(() => {
+		localStorage.setItem('echo-advanced-open', String(showAdvanced));
+	});
 	let running      = $state(false);
 	let rubricReady  = $state(false);
 	let rounds: Round[]      = $state([]);
@@ -377,20 +386,25 @@
 		</div>
 
 		<div class="query-controls">
-			<label class="rounds-label">
-				Max rounds
-				<input type="number" min={4} max={60} bind:value={maxRounds} class="rounds-input" />
-			</label>
-			<div class="model-toggle" role="group" aria-label="Model">
-				{#each ([['auto', 'Auto'], ['claude', 'Claude'], ['gpt4o', 'GPT-4o']] as const) as [val, label]}
-					<button
-						class="model-btn"
-						class:active={selectedModel === val}
-						onclick={() => selectedModel = val}
-						disabled={running}
-					>{label}</button>
-				{/each}
-			</div>
+			{#if showAdvanced}
+				<label class="rounds-label">
+					Max rounds
+					<input type="number" min={4} max={60} bind:value={maxRounds} class="rounds-input" />
+				</label>
+				<div class="model-toggle" role="group" aria-label="Model">
+					{#each ([['auto', 'Auto'], ['claude', 'Claude'], ['gpt4o', 'GPT-4o']] as const) as [val, label]}
+						<button
+							class="model-btn"
+							class:active={selectedModel === val}
+							onclick={() => selectedModel = val}
+							disabled={running}
+						>{label}</button>
+					{/each}
+				</div>
+			{/if}
+			<button class="advanced-toggle" onclick={() => showAdvanced = !showAdvanced}>
+				Advanced {showAdvanced ? '∨' : '›'}
+			</button>
 			<button class="run-btn" onclick={runSpeak} disabled={running || !query.trim()}>
 				{running ? 'Investigating…' : 'Investigate'}
 			</button>
@@ -476,7 +490,7 @@
 				</div>
 				<ol class="findings-list">
 					{#each primaryFindings as f, i}
-						<li class="finding-item">
+						<li class="finding-item" style="animation-delay: {i * 40}ms">
 							<div class="finding finding-accordion" onclick={() => toggleFinding(i)}>
 								<div class="finding-meta">
 									<span class="finding-tag" style="color:{TAG_COLOR[f.source_tag] ?? '#6b5a45'}">[{f.source_tag}]</span>
@@ -700,6 +714,21 @@
 	.run-btn:hover:not(:disabled) { background: var(--accent-glow); }
 	.run-btn:disabled { opacity: 0.4; cursor: default; }
 
+	.advanced-toggle {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--text-muted);
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0 0.7rem;
+		min-height: 44px;
+		cursor: pointer;
+		transition: color 0.12s, border-color 0.12s;
+		letter-spacing: 0.03em;
+	}
+	.advanced-toggle:hover { color: var(--text-secondary); border-color: var(--accent-dim); }
+
 	/* ── Trace ── */
 	.trace { display: flex; flex-direction: column; gap: 0.4rem; }
 
@@ -876,10 +905,15 @@
 	}
 
 	/* ── Per-finding eval row ── */
+	@keyframes finding-enter {
+		from { opacity: 0; transform: translateY(4px); }
+		to   { opacity: 1; transform: translateY(0); }
+	}
 	.finding-item {
 		border-bottom: 1px solid var(--border);
 		display: flex;
 		flex-direction: column;
+		animation: finding-enter 180ms ease both;
 	}
 	.finding-item:last-child { border-bottom: none; }
 
@@ -1043,4 +1077,12 @@
 		transition: color 0.15s, border-color 0.15s;
 	}
 	.save-btn:hover { color: var(--text-secondary); border-color: var(--accent-dim); }
+
+	/* ── mobile ── */
+	@media (max-width: 640px) {
+		.query-controls { flex-wrap: wrap; }
+		.run-btn { margin-left: 0; width: 100%; }
+		.advanced-toggle { flex: 1; }
+		.preset-btn { font-size: 0.75rem; }
+	}
 </style>

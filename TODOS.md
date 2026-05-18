@@ -5,15 +5,14 @@ pick up without re-reading the session that produced it.
 
 ---
 
-## Design Overhaul — deferred from soul transplant session (2026-05-18)
+## Design Overhaul — deferred from soul transplant session (2026-05-18) ✓ COMPLETE
 
 Soul transplant shipped: amber palette, Lora/Geist Mono dual typeface, CSS token system,
 touch targets, all component color passes. Design score C → B, AI Slop C → A.
 
-These items were explicitly deferred — they require layout changes, not just CSS token
-swaps, and belong in a dedicated design session.
+All four findings shipped in the design overhaul session (2026-05-18). See git history.
 
-### FINDING-011 — Model selector behind Advanced toggle
+### FINDING-011 — Model selector behind Advanced toggle ✓ SHIPPED
 
 **What:** The Auto / Claude / GPT-4o model selector is always visible in the query
 controls bar. It's an advanced control that most users will never touch after their
@@ -32,7 +31,7 @@ have to re-open every session.
 
 ---
 
-### FINDING-012 — Ask Echo controls layout restructure
+### FINDING-012 — Ask Echo controls layout restructure ✓ SHIPPED
 
 **What:** The Ask Echo tab (RAG chat) has a control layout that doesn't match the
 visual language established by the soul transplant. The input area and submit controls
@@ -49,7 +48,7 @@ a design review pass after.
 
 ---
 
-### FINDING-013 — Mobile layout
+### FINDING-013 — Mobile layout ✓ SHIPPED
 
 **What:** No mobile-specific layout work was done in the soul transplant session beyond
 touch targets (44px min-height on all interactive elements). The Agency Map table and
@@ -66,7 +65,7 @@ Nav tabs: confirm they don't wrap awkwardly. Run a design review at 375px viewpo
 
 ---
 
-### FINDING-014 — Animation and motion
+### FINDING-014 — Animation and motion ✓ SHIPPED
 
 **What:** No transitions exist on view switches, finding reveals, or the round trace
 expanding/collapsing. The UI snaps between states with no motion.

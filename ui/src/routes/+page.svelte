@@ -330,30 +330,6 @@
 				<span class="view-descriptor">RAG across your watch history, arcs, and search queries</span>
 			</div>
 
-			<!-- Controls row -->
-			<div class="chat-controls">
-				<select class="search-select" bind:value={chatModel}>
-					<option value="auto">Auto (Claude preferred)</option>
-					{#if availableModels.includes('claude')}
-						<option value="claude">Claude Sonnet 4.6</option>
-					{/if}
-					{#if availableModels.includes('gpt4o')}
-						<option value="gpt4o">GPT-4o</option>
-					{/if}
-				</select>
-				<span class="dim" style="font-size:0.72rem;padding:0 0.25rem">Time filter (optional):</span>
-				<input type="date" class="date-input" bind:value={chatStart} min="2019-12-01" max="2026-05-31" />
-				<span class="dim" style="font-size:0.72rem">→</span>
-				<input type="date" class="date-input" bind:value={chatEnd}   min="2019-12-01" max="2026-05-31" />
-				{#if chatStart || chatEnd}
-					<button class="diff-btn-ghost" onclick={() => { chatStart = ''; chatEnd = ''; }}>Clear</button>
-				{/if}
-				<label class="chat-toggle" title="Uncheck to skip chapter arc summaries and answer from raw data only">
-					<input type="checkbox" bind:checked={chatIncludeReflections} />
-					<span class="dim" style="font-size:0.72rem">Chapter context</span>
-				</label>
-			</div>
-
 			<!-- Message thread -->
 			<div class="chat-thread">
 				{#if chatHistory.length === 0}
@@ -408,19 +384,41 @@
 				{/if}
 			</div>
 
-			<!-- Input -->
-			<div class="chat-input-row">
+			<!-- Ask panel -->
+			<div class="ask-panel">
 				<textarea
-					class="chat-textarea"
+					class="ask-textarea"
 					bind:value={chatInput}
 					onkeydown={onChatKey}
-					placeholder="Ask about your history… (Enter to send, Shift+Enter for newline)"
-					rows="2"
+					placeholder="Ask about your six years of watching…"
+					rows="3"
 					disabled={chatLoading}
 				></textarea>
-				<button class="diff-btn" onclick={sendChat} disabled={chatLoading || !chatInput.trim()}>
-					Send
-				</button>
+				<div class="ask-controls">
+					<select class="search-select" bind:value={chatModel}>
+						<option value="auto">Auto (Claude preferred)</option>
+						{#if availableModels.includes('claude')}
+							<option value="claude">Claude Sonnet 4.6</option>
+						{/if}
+						{#if availableModels.includes('gpt4o')}
+							<option value="gpt4o">GPT-4o</option>
+						{/if}
+					</select>
+					<span class="dim" style="font-size:0.7rem;padding:0 0.1rem">Time filter:</span>
+					<input type="date" class="date-input" bind:value={chatStart} min="2019-12-01" max="2026-05-31" />
+					<span class="dim" style="font-size:0.7rem">→</span>
+					<input type="date" class="date-input" bind:value={chatEnd}   min="2019-12-01" max="2026-05-31" />
+					{#if chatStart || chatEnd}
+						<button class="diff-btn-ghost" onclick={() => { chatStart = ''; chatEnd = ''; }}>Clear</button>
+					{/if}
+					<label class="chat-toggle" title="Uncheck to skip chapter arc summaries and answer from raw data only">
+						<input type="checkbox" bind:checked={chatIncludeReflections} />
+						<span class="dim" style="font-size:0.7rem">Chapter context</span>
+					</label>
+					<button class="ask-send-btn" onclick={sendChat} disabled={chatLoading || !chatInput.trim()}>
+						Send
+					</button>
+				</div>
 			</div>
 		</section>
 	{/if}
@@ -439,7 +437,13 @@
 </div>
 
 <style>
+	@keyframes view-enter {
+		from { opacity: 0; }
+		to   { opacity: 1; }
+	}
+
 	.shell { max-width: 860px; margin: 0 auto; padding: 1.5rem 1rem; }
+	section { animation: view-enter 120ms ease both; }
 
 	header { margin-bottom: 1.5rem; }
 	h1 {
@@ -737,13 +741,56 @@
 	/* ── chat ────────────────────────────────────────────────────────── */
 	.chat-section { display: flex; flex-direction: column; }
 
-	.chat-controls {
+	.ask-panel {
+		background: var(--surface-0);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.ask-textarea {
+		width: 100%;
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--text-primary);
+		padding: 0.65rem 0.85rem;
+		font-size: 1rem;
+		font-family: 'Lora', serif;
+		font-style: italic;
+		resize: none;
+		line-height: 1.6;
+		box-sizing: border-box;
+	}
+	.ask-textarea:focus { outline: 1px solid var(--accent-dim); }
+	.ask-textarea::placeholder { color: var(--text-muted); font-style: italic; }
+	.ask-textarea:disabled { opacity: 0.5; }
+
+	.ask-controls {
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
-		margin-bottom: 1rem;
 		flex-wrap: wrap;
 	}
+
+	.ask-send-btn {
+		margin-left: auto;
+		background: var(--accent);
+		border: none;
+		border-radius: 6px;
+		color: var(--bg);
+		font-size: 0.85rem;
+		font-weight: 600;
+		padding: 0.45rem 1.1rem;
+		min-height: 44px;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.ask-send-btn:hover:not(:disabled) { background: var(--accent-glow); }
+	.ask-send-btn:disabled { opacity: 0.5; cursor: default; }
 
 	.chat-toggle {
 		display: flex;
@@ -892,5 +939,16 @@
 	.chat-textarea:focus { outline: none; border-color: var(--accent-dim); }
 	.chat-textarea:disabled { opacity: 0.5; }
 	.chat-textarea::placeholder { color: var(--text-muted); }
+
+	/* ── mobile ──────────────────────────────────────────────────────── */
+	@media (max-width: 640px) {
+		.shell { padding: 1rem 0.75rem; }
+		h1 { font-size: 1.9rem; }
+		nav button { flex: 1; padding: 0 0.5rem; font-size: 0.72rem; }
+		.ask-send-btn { margin-left: 0; width: 100%; }
+		.date-input { font-size: 0.72rem; padding: 0.25rem 0.35rem; }
+		.session-card { flex-wrap: wrap; gap: 0.5rem; }
+		.depth-label { min-width: unset; }
+	}
 
 </style>
