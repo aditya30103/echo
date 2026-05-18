@@ -115,6 +115,7 @@ See [TODOS.md](./TODOS.md) for the deferred-work list with context.
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | High-level design, module map, tech choices |
 | [DATA.md](./DATA.md) | Every table, every column, how it's computed |
 | [RUNBOOK.md](./RUNBOOK.md) | Operating the pipeline, idempotency contracts, debugging |
+| [DESIGN.md](./DESIGN.md) | Visual design system — two-temperature principle, color tokens, typography, component patterns |
 | [CLAUDE.md](./CLAUDE.md) / [AGENTS.md](./AGENTS.md) | Conventions for AI assistants working on the codebase |
 | [TODOS.md](./TODOS.md) | Deferred work + ship-blocker tracking |
 | [annotations.example.yaml](./annotations.example.yaml) | Template for the per-user life-context file |
