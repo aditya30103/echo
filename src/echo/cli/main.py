@@ -13,6 +13,7 @@ fall into two groups:
     echo ingest              Run ingest only
     echo enrich              YouTube API enrichment
     echo enrich-spotify      Spotify API enrichment
+    echo enrich-music-meta   Last.fm tag enrichment (mood/genre dimension)
     echo detect              PELT changepoint detection
     echo signals             Engagement signal scoring
     echo reflect             GPT-4o narrative reflection (use --dry-run first)
@@ -104,7 +105,13 @@ def init(
 
 
 # Pipeline step ordering for `echo run`. Keep in sync with the design doc.
-_PIPELINE_STEPS = ("ingest", "enrich", "enrich-spotify", "detect", "signals", "reflect", "embed")
+# enrich-music-meta is fail-soft on missing LASTFM_API_KEY (prints message and
+# returns rather than sys.exit) so it can safely sit in the default order
+# without breaking users who haven't configured a Last.fm key.
+_PIPELINE_STEPS = (
+    "ingest", "enrich", "enrich-spotify", "enrich-music-meta",
+    "detect", "signals", "reflect", "embed",
+)
 
 
 def _module_for(step: str):
@@ -121,6 +128,10 @@ def run(
     skip_enrich_spotify: bool = typer.Option(
         False, "--skip-enrich-spotify",
         help="Skip Spotify enrichment (useful if you haven't configured a Spotify app yet).",
+    ),
+    skip_enrich_music_meta: bool = typer.Option(
+        False, "--skip-enrich-music-meta",
+        help="Skip Last.fm tag enrichment (mood/genre dimension).",
     ),
 ) -> None:
     """Run the full pipeline: ingest -> enrich -> detect -> signals -> reflect -> embed.
@@ -140,6 +151,8 @@ def run(
         steps = steps[steps.index(from_step):]
     if skip_enrich_spotify and "enrich-spotify" in steps:
         steps.remove("enrich-spotify")
+    if skip_enrich_music_meta and "enrich-music-meta" in steps:
+        steps.remove("enrich-music-meta")
 
     typer.echo(f"Running pipeline: {' -> '.join(steps)}\n")
     for step in steps:
@@ -193,6 +206,7 @@ def doctor() -> None:
         ("  ANTHROPIC    ", cfg.api_keys.anthropic),
         ("  SPOTIFY_ID   ", cfg.api_keys.spotify_client_id),
         ("  SPOTIFY_SEC  ", cfg.api_keys.spotify_client_secret),
+        ("  LASTFM       ", cfg.api_keys.lastfm),
         ("  LANGFUSE_PUB ", cfg.api_keys.langfuse_public),
         ("  LANGFUSE_SEC ", cfg.api_keys.langfuse_secret),
     ):
@@ -244,6 +258,16 @@ def enrich_spotify(
     """Spotify metadata enrichment (duration, explicit, URI verify)."""
     from echo.pipeline import enrich_spotify as mod
     mod.run(load_config(), dry_run=dry_run, limit=limit)
+
+
+@app.command("enrich-music-meta")
+def enrich_music_meta(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show counts, no API calls."),
+    top_n:   int  = typer.Option(500, "--top-n", help="Tier 2 depth (most-played tracks for track-level tags)."),
+) -> None:
+    """Last.fm tag enrichment: per-artist (Tier 1) + per-track top-N (Tier 2)."""
+    from echo.pipeline import enrich_music_meta as mod
+    mod.run(load_config(), dry_run=dry_run, top_n=top_n)
 
 
 @app.command()
