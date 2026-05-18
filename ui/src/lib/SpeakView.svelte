@@ -652,7 +652,8 @@
 		border-radius: 4px;
 		color: var(--text-primary);
 		font-size: 0.8rem;
-		padding: 0.2rem 0.4rem;
+		padding: 0 0.4rem;
+		min-height: 44px;
 		text-align: center;
 	}
 
@@ -662,6 +663,7 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		overflow: hidden;
+		align-items: stretch;
 	}
 	.model-btn {
 		background: none;
@@ -670,7 +672,8 @@
 		color: var(--text-muted);
 		font-size: 0.68rem;
 		font-weight: 600;
-		padding: 0.2rem 0.55rem;
+		padding: 0 0.55rem;
+		min-height: 44px;
 		cursor: pointer;
 		transition: background 0.12s, color 0.12s;
 		white-space: nowrap;
