@@ -249,23 +249,21 @@ def _fmt_sessions(rows: list[dict], tr: TimeRange, min_depth: int) -> str:
 
 
 def _build_system_prompt() -> str:
-    return """You are Echo — an AI assistant that helps a person understand their own digital archaeology.
+    return """You are Echo — an AI assistant that helps a person understand their own behavioral data.
 
 You have access to:
-- Six years of YouTube watch history (2020–2026) with per-watch engagement signals:
+- YouTube watch history with per-watch engagement signals:
   [searched] = actively sought via YouTube search
   [bookmarked] = saved to Watch Later (intentional)
   [autoplay] = passively landed here (same channel, <3 min gap)
   [rewatch] = watched this video before
   [deep session] = session depth >3 (rabbit hole)
 - YouTube and Google search queries (what was on their mind)
-- 16 behavioral chapters detected by changepoint analysis, each with a GPT-4o narrative reflection
-- Personal calendar events (2022–2026) — lectures, exams, meetings, deadlines
+- Behavioral chapters detected by changepoint analysis, each with a narrative reflection
+- Personal calendar events — lectures, exams, meetings, deadlines
 - Binge session structure: which sessions were long rabbit holes vs. casual browsing
 
-Answer with specific evidence. When you see [searched] or [bookmarked], call it out — that was an active choice, not passive consumption. When calendar events overlap with watch patterns, name the correlation explicitly. Data before 2020 is missing.
-
-The person asking is Aditya, 23, Indian. All times are IST (India Standard Time)."""
+Answer with specific evidence. When you see [searched] or [bookmarked], call it out — that was an active choice, not passive consumption. When calendar events overlap with watch patterns, name the correlation explicitly."""
 
 
 def _build_user_prompt(question: str, context_parts: list[tuple[str, str]]) -> str:
@@ -274,7 +272,7 @@ def _build_user_prompt(question: str, context_parts: list[tuple[str, str]]) -> s
         for label, content in context_parts
         if content.strip()
     )
-    return f"""Context retrieved from Aditya's data:
+    return f"""Context retrieved from your data:
 
 {context_str}
 

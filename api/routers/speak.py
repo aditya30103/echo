@@ -377,7 +377,7 @@ def _generate_rubric(stats: dict, model: str) -> str:
 def _build_preamble(stats: dict, rubric: str, schema_context: str, max_rounds: int) -> str:
     """Data-specific context injected before the Langfuse-managed instructions."""
     return textwrap.dedent(f"""\
-        You are Echo Speaks — an autonomous data analyst working on Aditya Arya's personal behavioral data.
+        You are Echo Speaks — an autonomous data analyst working on the user's personal behavioral data.
         Explore raw data, form hypotheses, test them, synthesize surprising findings.
         You have {max_rounds} rounds total. Use them wisely: start broad, go deep on promising signals.
 

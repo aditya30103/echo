@@ -171,7 +171,7 @@
 <div class="shell">
 	<header>
 		<h1>Echo</h1>
-		<p class="subtitle">Six years of watching. Who were you?</p>
+		<p class="subtitle">Your past, heard back.</p>
 		<nav>
 			<button class:active={selectedView === 'speak'} onclick={() => switchView('speak')}>
 				Echo Speaks
@@ -275,7 +275,7 @@
 			<div class="chat-thread">
 				{#if chatHistory.length === 0}
 					<div class="chat-empty">
-						<p>Ask anything about your six years of watching.</p>
+						<p>Ask anything about your data.</p>
 						<div class="chat-suggestions">
 							{#each [
 								'What was I watching the week before JEE Advanced?',
@@ -331,7 +331,7 @@
 					class="ask-textarea"
 					bind:value={chatInput}
 					onkeydown={onChatKey}
-					placeholder="Ask about your six years of watching…"
+					placeholder="Ask about your data…"
 					rows="3"
 					disabled={chatLoading}
 				></textarea>

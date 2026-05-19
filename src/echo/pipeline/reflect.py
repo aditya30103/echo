@@ -55,9 +55,8 @@ OPENROUTER_MODEL  = "openai/gpt-4o"  # OpenRouter uses provider-namespaced IDs
 
 CHAPTER_PROMPT_SYSTEM = """\
 You are a thoughtful observer helping someone understand a chapter of their life \
-through their YouTube watch history. The data spans ages 13–23 for an Indian \
-student (IST timezone). You have access to the videos watched, searches made, \
-calendar events, and engagement patterns for a specific time window.
+through their YouTube watch history. You have access to the videos watched, \
+searches made, calendar events, and engagement patterns for a specific time window.
 
 Speak directly to the person in second person ("you were", "you searched for", \
 "this was a time when"). Be concrete about what the data actually shows. \
@@ -67,9 +66,8 @@ Avoid generic observations — find the specific story in the numbers. \
 
 AUTOBIOGRAPHY_SYSTEM = """\
 You are a thoughtful observer helping someone understand their intellectual and \
-emotional journey through 6+ years of YouTube watch history. The data spans \
-ages 13–23 for an Indian student (IST timezone), with chapters detected by \
-an algorithm that found genuine behavioral shifts.
+emotional journey through years of YouTube watch history, with chapters detected \
+by an algorithm that found genuine behavioral shifts.
 
 Write a 500–700 word autobiography-style narrative synthesizing the arc across \
 all chapters. Speak in second person. Show the progression: what changed, what \

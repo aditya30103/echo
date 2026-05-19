@@ -9,13 +9,12 @@ For day-to-day operation, see [RUNBOOK.md](./RUNBOOK.md).
 
 ## Mission
 
-Echo is a **personal data archaeology** tool. It takes 6+ years of one
-person's Google Takeout (YouTube history, searches, calendar, payments) plus
-Spotify Extended Streaming History and turns them into a queryable local store
-that an autonomous Claude agent can reason over. The agent finds chapters in
-your life from changepoints in your viewing patterns, writes narrative
-reflections of each one, and answers free-form questions with evidence trails
-back to the underlying rows.
+Echo turns your behavioral data into a personal chronicle. It takes your
+Google Takeout (YouTube history, searches, calendar, payments) plus Spotify
+Extended Streaming History and turns them into a queryable local store that an
+autonomous Claude agent can reason over. The agent finds chapters in your life
+from changepoints in your viewing patterns, writes narrative reflections of each
+one, and answers free-form questions with evidence trails back to the underlying rows.
 
 Three rails the architecture commits to:
 

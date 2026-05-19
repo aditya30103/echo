@@ -313,10 +313,11 @@ correct them, or edit `~/.echo/config.toml` directly.
 (10,000 units, ~10K videos). Wait for the midnight PT reset and try again.
 The metadata cache means the next run only fetches what was missed.
 
-**`echo reflect` quotes a different language than you expect** — The
-system prompt is tuned for an Indian student aged 13-23. For other contexts,
-edit the `CHAPTER_PROMPT_SYSTEM` and `AUTOBIOGRAPHY_SYSTEM` strings near the
-top of `src/echo/pipeline/reflect.py`.
+**`echo reflect` uses generic language with no personal context** — The
+reflection quality improves when you fill in `private/annotations.yaml` (template
+at `annotations.example.yaml`). The system prompt reads your life context from
+that file and tailors the narrative to your situation. Without it, reflections
+are factually correct but generic. See `annotations.example.yaml` for what to fill in.
 
 **Langfuse traces not showing** — The env var is `LANGFUSE_HOST` (not
 `LANGFUSE_BASE_URL`). The latter is silently ignored. Check `~/.echo/.env`.

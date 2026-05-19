@@ -1,4 +1,4 @@
-"""Echo — personal data archaeology, locally owned.
+"""Echo — your data, played back.
 
 Pipeline scripts (in `echo.pipeline.*`) ingest your Google Takeout + Spotify
 exports into a local SQLite + LanceDB store. The CLI (`echo` command, defined

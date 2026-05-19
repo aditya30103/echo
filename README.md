@@ -1,14 +1,13 @@
 # Echo
 
-**Personal data archaeology, locally owned.**
+**Your past, heard back.**
 
-Echo turns 6+ years of your own Google Takeout (YouTube watches, searches,
-calendar, payments) and Spotify Extended Streaming History into a queryable
-local database, then runs an autonomous Claude-powered agent over it. The agent
-finds chapters in your life from the changepoints in your viewing patterns,
-writes narrative reflections of each one, and answers free-form questions like
-"what was I anxious about in early 2024" or "show me my deepest binge sessions
-from college" — with evidence trails back to the underlying rows.
+Echo turns your Google Takeout (YouTube watches, searches, calendar) and Spotify
+Extended Streaming History into a queryable local database, then runs an autonomous
+Claude-powered agent over it. The agent finds chapters in your life from the
+changepoints in your viewing patterns, writes narrative reflections of each one,
+and answers free-form questions like "what was I anxious about in early 2024" or
+"show me my deepest binge sessions" — with evidence trails back to the underlying rows.
 
 It runs entirely on your machine.
 

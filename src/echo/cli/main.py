@@ -39,7 +39,7 @@ from echo.cli.migrate import migrate_data as _migrate_data
 
 app = typer.Typer(
     name="echo",
-    help="Personal data archaeology - analyze your own YouTube + Spotify + Calendar history.",
+    help="Echo — your data, played back. Analyze your YouTube, Spotify, and Calendar history.",
     no_args_is_help=True,
     add_completion=False,
 )
