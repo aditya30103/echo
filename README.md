@@ -56,7 +56,7 @@ and can be added later — just re-run the relevant pipeline step.
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/echo.git
+git clone https://github.com/aditya30103/echo.git
 cd echo
 pip install -e .
 
