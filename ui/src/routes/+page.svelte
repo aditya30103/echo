@@ -471,7 +471,7 @@
 
 	.agency-header {
 		background: var(--surface-0);
-		color: var(--text-muted);
+		color: var(--text-secondary);
 		font-size: 0.72rem;
 		font-weight: 600;
 		text-transform: uppercase;
