@@ -2,35 +2,28 @@
 
 ## What this project is
 
-Echo is a personal data archaeology project — 6+ years of YouTube watches,
-searches, calendar events, transactions, and Spotify plays ingested into
-SQLite + LanceDB and analysed by an autonomous Claude-powered agent.
-The data spans personal life from age 13 onwards; treat with appropriate care.
+Echo turns your Google Takeout and Spotify history into a queryable local database
+analysed by an autonomous Claude-powered agent. YouTube watches, searches, calendar
+events, and Spotify plays ingested into SQLite + LanceDB. The agent finds behavioral
+chapters, writes narrative reflections, and answers free-form questions about your data.
+User data is personal and sensitive — handle with care.
 
 **Stack:** Python + FastAPI + SQLite (sqlite-utils) + LanceDB + SvelteKit + Anthropic (Claude)
 **License:** MIT (`LICENSE` at repo root)
 **Owner:** Aditya Arya (IST timezone)
-**Status:** Echo v3 live. Public OSS-release prep in progress (2026-05-16).
+**Status:** Echo v3 live on master. OSS pre-release cleanup in progress (2026-05-19).
 
 ---
 
-## Status — packaging shipped, awaiting merge
+## Status — v3 on master
 
-The `packaging-v1` branch ships the installable `echo` CLI plus every
-follow-on (api/ migration, docker mount updates, `echo serve`,
-`echo migrate-data`, full README/SETUP/ARCHITECTURE doc trio,
-requirements.txt retired in favor of pyproject.toml).
+Packaged CLI (`echo` command via `pip install -e .`) is live on master.
+All 8 pipeline steps migrated. `echo serve` runs FastAPI + SvelteKit on one port.
 
-Open queue for the next session (all in `TODOS.md`):
-- Fixture-based integration tests (one per pipeline step against a tiny
-  hand-crafted Takeout zip under `tests/fixtures/`).
-- GitHub Action smoke test (clone → `pip install -e .` → `echo init
-  --non-interactive` → `echo run` against the fixture).
-- SvelteKit `adapter-static` swap so `echo serve` ships the UI prebuilt.
-- Final pytest sanity gate, then merge `packaging-v1` → `master`.
-- Spotify Phase 2 (`echo enrich-spotify` full run) when quota unblocks.
-
-Design doc for packaging: `~/.gstack/projects/Echo/Aditya Arya-master-design-packaging-20260516.md`.
+Active deferred work is tracked in `TODOS.md`. Key pending items:
+- Integration tests + GitHub Action smoke test
+- SvelteKit adapter-static build step (adapter is configured; build output missing)
+- Spotify Phase 2 (`echo enrich-spotify` full run, quota-blocked)
 
 ---
 
@@ -81,8 +74,8 @@ See `docs/RUNBOOK.md` for full usage. See `docs/DATA.md` for what every table an
 - **`--dry-run` before any `reflect.py` live run** — prompts consume GPT-4o tokens.
 
 ### Sensitive data rules
-- Data spans personal life from age 13. Don't log, print, or expose specific
-  watch titles or search queries unnecessarily.
+- User data is personal and potentially spans many years of their life.
+  Don't log, print, or expose specific watch titles or search queries unnecessarily.
 - `.env`, `echo.db`, `_data/`, `private/`, `AB Test/`, `lancedb/` — all gitignored,
   never commit.
 - `.env.example` (no values) is the only env-related file ever committed.

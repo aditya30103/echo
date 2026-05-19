@@ -199,22 +199,22 @@ def doctor() -> None:
     typer.echo(f"LLM provider:        {cfg.llm_provider}")
     typer.echo("")
     typer.echo("API keys (4-char tail shown if set):")
-    for label, key in (
-        ("  YOUTUBE      ", cfg.api_keys.youtube),
-        ("  OPENAI       ", cfg.api_keys.openai),
-        ("  OPENROUTER   ", cfg.api_keys.openrouter),
-        ("  ANTHROPIC    ", cfg.api_keys.anthropic),
-        ("  SPOTIFY_ID   ", cfg.api_keys.spotify_client_id),
-        ("  SPOTIFY_SEC  ", cfg.api_keys.spotify_client_secret),
-        ("  LASTFM       ", cfg.api_keys.lastfm),
-        ("  LANGFUSE_PUB ", cfg.api_keys.langfuse_public),
-        ("  LANGFUSE_SEC ", cfg.api_keys.langfuse_secret),
+    for label, key, capability in (
+        ("  ANTHROPIC    ", cfg.api_keys.anthropic,           "Echo Speaks agent (main feature)"),
+        ("  OPENAI       ", cfg.api_keys.openai,              "chapter reflections + embeddings"),
+        ("  OPENROUTER   ", cfg.api_keys.openrouter,          "alternative LLM routing"),
+        ("  YOUTUBE      ", cfg.api_keys.youtube,             "video metadata enrichment"),
+        ("  SPOTIFY_ID   ", cfg.api_keys.spotify_client_id,   "Spotify track enrichment"),
+        ("  SPOTIFY_SEC  ", cfg.api_keys.spotify_client_secret,"Spotify track enrichment"),
+        ("  LASTFM       ", cfg.api_keys.lastfm,              "music mood/genre tags"),
+        ("  LANGFUSE_PUB ", cfg.api_keys.langfuse_public,     "agent tracing dashboard"),
+        ("  LANGFUSE_SEC ", cfg.api_keys.langfuse_secret,     "agent tracing dashboard"),
     ):
         if key:
             tail = key[-4:] if len(key) > 4 else "***"
-            typer.echo(f"{label}: set (***{tail})")
+            typer.echo(f"{label}: set (***{tail})  -> {capability}")
         else:
-            typer.echo(f"{label}: not set")
+            typer.echo(f"{label}: not set           -> {capability}")
     typer.echo("")
 
     # DB schema sanity (only if DB exists)
