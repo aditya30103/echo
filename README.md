@@ -30,24 +30,26 @@ When you stop using Echo, you delete `~/.echo/` and that's the end of it.
 
 ---
 
-## What you'll need
+## What do I need?
 
-- **Python 3.11+**
-- **Node.js 20+** (only if you want the SvelteKit UI; the CLI works without it)
-- **~5 GB disk** for the database, vector index, and (large) Takeout zip
-- **A Google Takeout export** of your YouTube history + My Activity + Calendar:
-  download at <https://takeout.google.com>
-- **(Optional) A Spotify Extended Streaming History export**: request at
-  <https://spotify.com/account/privacy> — takes Spotify ~30 days to ship
-- **(Optional) API keys**:
-  - Anthropic Claude — for the autonomous Echo Speaks agent (best results)
-  - OpenAI or OpenRouter — for chapter reflections + embeddings (~$0.15 for a
-    full reflection pass on 16 chapters; ~$0.01 for embeddings)
-  - YouTube Data API — for video metadata enrichment (free, 10K quota/day)
-  - Spotify Web API — for track metadata (free, Client Credentials flow)
+**The only hard requirement is a Google Takeout export.** Everything else is optional
+and can be added later — just re-run the relevant pipeline step.
 
-If you don't have API keys yet, run `echo init` first — it links to every
-provider's dashboard and walks you through the setup.
+| What you have | What you can do |
+|---|---|
+| Google Takeout only | Ingest + detect chapters + engagement signals. Binge Sessions and Agency Map views work. |
+| + Anthropic key | **Echo Speaks** — the autonomous agent that investigates your data and narrates findings. |
+| + OpenAI key | Chapter narrative reflections (GPT-4o) + vector embeddings for semantic search. |
+| + YouTube Data API key | Video metadata enrichment (title, channel, view count). Free, 10K quota/day. |
+| + Spotify history + keys | Spotify plays, listening patterns, cross-modal music + video queries. |
+
+> **Spotify heads-up:** The Extended Streaming History export takes ~30 days from
+> Spotify to deliver. Request it at <https://www.spotify.com/account/privacy> now
+> if you want Spotify data — you can finish the rest of the setup while you wait.
+
+**Hardware:** Python 3.11+, ~5 GB disk. Node.js 20+ only if you want to rebuild the UI.
+
+`echo init` links to every provider's dashboard and walks you through the setup.
 
 ---
 
@@ -63,7 +65,7 @@ echo run       # ingest -> enrich -> detect -> signals -> reflect -> embed
 echo serve     # open http://localhost:8000  (or: docker compose up)
 ```
 
-Full walkthrough in [SETUP.md](./SETUP.md).
+Quick-start guide (AI-friendly): [INSTALL.md](./INSTALL.md). Full walkthrough: [SETUP.md](./SETUP.md).
 
 ---
 
