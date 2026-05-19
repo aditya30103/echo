@@ -8,11 +8,16 @@ Covers:
 
 from __future__ import annotations
 
+import re
 import sqlite_utils
 from typer.testing import CliRunner
 
 from echo.cli.main import app, _PIPELINE_STEPS
 from echo.pipeline import enrich_music_meta as mod
+
+
+def _strip_ansi(s: str) -> str:
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
 
 
 def test_pipeline_steps_includes_enrich_music_meta_after_spotify():
@@ -28,8 +33,11 @@ def test_cli_enrich_music_meta_help_works():
     runner = CliRunner()
     result = runner.invoke(app, ["enrich-music-meta", "--help"])
     assert result.exit_code == 0
-    assert "--top-n" in result.stdout
-    assert "--dry-run" in result.stdout
+    # Strip ANSI escape codes — CI outputs color, Windows terminal does not.
+    # Without stripping, "--top-n" appears as "--top\x1b[1;36m-n" and fails `in`.
+    clean = _strip_ansi(result.stdout)
+    assert "--top-n" in clean
+    assert "--dry-run" in clean
 
 
 def test_cli_enrich_music_meta_missing_key_exits_zero(tmp_path, monkeypatch):
