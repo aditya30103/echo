@@ -11,6 +11,8 @@ and answers free-form questions like "what was I anxious about in early 2024" or
 
 It runs entirely on your machine.
 
+![Echo Speaks — findings view](docs/assets/screenshot.png)
+
 ---
 
 ## Privacy
