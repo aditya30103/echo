@@ -2,7 +2,7 @@
 
 High-level map of what's in the repo, how the pieces fit together, and the
 reasoning behind the major technology choices. For installation, see
-[SETUP.md](./SETUP.md). For what every table column means, see [DATA.md](./DATA.md).
+[SETUP.md](../SETUP.md). For what every table column means, see [DATA.md](./DATA.md).
 For day-to-day operation, see [RUNBOOK.md](./RUNBOOK.md).
 
 ---

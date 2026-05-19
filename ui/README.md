@@ -24,7 +24,7 @@ npm run build            # production build
 ## Architecture and components
 
 Component map and design rationale live in the root
-[ARCHITECTURE.md](../ARCHITECTURE.md) (added in the release-prep cleanup).
+[ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 Key UI entry points:
 
 - `src/routes/+page.svelte` — landing + Echo Speaks

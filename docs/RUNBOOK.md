@@ -1,7 +1,7 @@
 # Echo — Runbook
 
 Operational guide for running and maintaining the Echo pipeline.
-For what tables/columns mean, see DATA.md.
+For what tables/columns mean, see [DATA.md](./DATA.md).
 
 ---
 

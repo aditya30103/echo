@@ -44,7 +44,7 @@ ingest → enrich → enrich-spotify → enrich-music-meta → detect → signal
 
 (`enrich-spotify` and `enrich-music-meta` are optional; both are fail-soft on missing keys and `echo run` continues past them.)
 
-See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column means.
+See `docs/RUNBOOK.md` for full usage. See `docs/DATA.md` for what every table and column means.
 
 ---
 
@@ -60,9 +60,9 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
   session, subsequent commits use the new model's attribution, not the default.
 
 ### Documentation
-- **`DATA.md`** — update whenever a table or column is added, removed, or its
+- **`docs/DATA.md`** — update whenever a table or column is added, removed, or its
   semantics change. Include how it's computed and known limitations.
-- **`RUNBOOK.md`** — update whenever a script is added, pipeline order changes,
+- **`docs/RUNBOOK.md`** — update whenever a script is added, pipeline order changes,
   or a new external dependency is required.
 - **Constants** — every tunable constant gets an inline comment explaining the
   reasoning and what changes if you adjust it. Not the value — the *why*.
@@ -117,11 +117,11 @@ See `RUNBOOK.md` for full usage. See `DATA.md` for what every table and column m
 | `annotations.example.yaml` | Template — copy to `private/annotations.yaml` to add LIFE CONTEXT |
 | `metadata.yaml` | Datasette query definitions (sanitized; no personal refs) |
 | `LICENSE` | MIT |
-| `DESIGN.md` | Visual design system — two-temperature principle, color tokens, typography, component patterns. Read before touching any UI. |
+| `docs/DESIGN.md` | Visual design system — two-temperature principle, color tokens, typography, component patterns. Read before touching any UI. |
 | `CLAUDE.md` / `AGENTS.md` | AI context (AGENTS.md is a stub; CLAUDE.md is source of truth) |
-| `SETUP.md` | Onboarding (will be rewritten in the packaging session) |
-| `RUNBOOK.md` | How to operate the pipeline |
-| `DATA.md` | What every table and column means |
+| `SETUP.md` | Onboarding — install, first run, troubleshooting |
+| `docs/RUNBOOK.md` | How to operate the pipeline |
+| `docs/DATA.md` | What every table and column means |
 | `TODOS.md` | Deferred work + active focus pointer |
 | `Dockerfile`, `ui/Dockerfile`, `docker-compose.yml` | Container setup |
 | `.env` (gitignored) / `.env.example` (committed) | API key configuration |

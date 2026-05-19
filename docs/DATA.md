@@ -1,7 +1,7 @@
 # Echo — Data Dictionary
 
 What each table and column means, how it was computed, and known limitations.
-For how to run the pipeline, see RUNBOOK.md.
+For how to run the pipeline, see [RUNBOOK.md](./RUNBOOK.md).
 
 ---
 

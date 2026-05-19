@@ -63,6 +63,12 @@ ui/.vscode/
 .context/
 # (Permits committed CLAUDE.md at repo root since CLAUDE.md is not under .claude/)
 
+# gstack design tool working directory
+.design-audit/
+
+# AGENTS.md is a stub — CLAUDE.md is the source of truth for AI conventions
+AGENTS.md
+
 # Test caches
 .pytest_cache/
 
