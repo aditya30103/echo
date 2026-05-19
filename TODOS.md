@@ -48,20 +48,6 @@ works on a clean machine with no existing `.env` or `~/.echo/`.
 
 ---
 
-## TODO: SvelteKit adapter-static build step
-
-**What:** `ui/svelte.config.js` already uses `@sveltejs/adapter-static` with
-`fallback: 'index.html'`. The remaining step is: `cd ui && npm run build`, verify
-output lands in `src/echo/ui/dist/`, confirm `echo serve` returns the rendered HTML.
-
-**Why:** `echo serve` currently prints "UI not bundled" because `src/echo/ui/dist/`
-only has a `.gitkeep` placeholder. The pyproject.toml `force-include` is already
-wired; the build step itself is the remaining piece.
-
-**Blocked by:** Nothing — ~20 min.
-
----
-
 ## TODO: Echo Speaks context mgmt — Layers 2 & 3
 
 **What:** Layer 1 (per-tool structured compression via `api/tools/compressors.py`)
@@ -164,7 +150,9 @@ to human score, flag systematic biases by source_tag.
 
 | Session | What shipped |
 |---|---|
+| 2026-05-19 | Spotify/YouTube agent parity — spotify_tracks in search tool, speak rubric/schema/Phase 1, chat retrieval; fix llm_chat unpack bug in Ask Echo; CI ANSI test fix |
 | 2026-05-19 | OSS release prep — BLOCKING personal strings removed, /docs/ move, INSTALL.md, onboarding clarity, .gitignore audit, CLAUDE.md/TODOS.md cleanup |
+| 2026-05-17 | SvelteKit adapter-static build — dist/ committed to git; echo serve serves full UI |
 | 2026-05-18 | Music meta enrichment (Tier 1+2 Last.fm), 5th LanceDB table (spotify_tracks), design system lock, soul transplant, design audit (78→84), design overhaul FINDING-011–014 |
 | 2026-05-16–17 | packaging-v1 merged: installable CLI, EchoConfig, all 8 pipeline scripts migrated, Typer CLI, api/ migration, echo serve, echo migrate-data, README/SETUP/ARCHITECTURE docs |
 | 2026-05-15 | Layer 0+1 context management, A/B test confirmation |
