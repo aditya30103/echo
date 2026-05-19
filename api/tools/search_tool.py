@@ -1,8 +1,10 @@
 """vector_search tool — semantic search in lancedb."""
 
+import json
+
 from api.vec import embed_query, search_table
 
-_RAW_TABLES       = {"videos", "searches", "google_searches"}
+_RAW_TABLES       = {"videos", "searches", "google_searches", "spotify_tracks"}
 _NARRATIVE_TABLES = {"reflections"}
 
 
@@ -38,6 +40,16 @@ def vector_search(query: str, table: str, limit: int = 5) -> str:
             lines.append(
                 f"  [{sim}] {r.get('title') or r.get('video_id')} "
                 f"— {r.get('channel')} (watched {r.get('watch_count', '?')}×)"
+            )
+        elif table == "spotify_tracks":
+            tags_raw = r.get("lastfm_tags") or r.get("artist_lastfm_tags") or "[]"
+            try:
+                tags = json.loads(tags_raw)[:3]
+                tag_str = f" [{', '.join(tags)}]" if tags else ""
+            except Exception:
+                tag_str = ""
+            lines.append(
+                f"  [{sim}] {r.get('track_name')} — {r.get('artist_name')}{tag_str}"
             )
         else:  # searches / google_searches
             span = f"{(r.get('first_seen') or '')[:7]}–{(r.get('last_seen') or '')[:7]}"

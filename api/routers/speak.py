@@ -26,7 +26,10 @@ SELECT
     (SELECT COUNT(*)              FROM google_searches)      AS google_search_count,
     (SELECT COUNT(DISTINCT query) FROM yt_searches)          AS yt_search_count,
     (SELECT COUNT(*)              FROM chapters)             AS chapter_count,
-    (SELECT COUNT(*)              FROM calendar_events)      AS calendar_count
+    (SELECT COUNT(*)              FROM calendar_events)      AS calendar_count,
+    (SELECT COUNT(*)              FROM spotify_plays)        AS spotify_play_count,
+    (SELECT MIN(ts)               FROM spotify_plays)        AS earliest_spotify,
+    (SELECT MAX(ts)               FROM spotify_plays)        AS latest_spotify
 """
 
 _ACTION_RE = re.compile(r'ACTION:\s*(\{.*\})', re.DOTALL)
@@ -40,7 +43,7 @@ _SCHEMA_TABLES = [
     "google_searches", "yt_searches",
     "chapters", "chapter_fingerprints", "reflections",
     "calendar_events", "transactions",
-    "spotify_plays", "spotify_signals",
+    "spotify_plays", "spotify_signals", "spotify_tracks",
 ]
 
 # ── Langfuse-managed instruction template ─────────────────────────────────────
@@ -62,7 +65,7 @@ Observations are tagged by source. Honor these tiers strictly:
 
 ## Phase rules
 Rounds 1-{{narrative_blind_rounds}}: PHASE 1 - Narrative-blind.
-  Available: run_sql, execute_python, vector_search(videos|searches|google_searches),
+  Available: run_sql, execute_python, vector_search(videos|searches|google_searches|spotify_tracks),
              run_pelt, run_clustering, youtube_lookup, web_search
   BLOCKED: vector_search(reflections), run_sql on reflections table
   Form ALL hypotheses from raw behavioral data only.
@@ -315,6 +318,9 @@ def _get_stats(db: sqlite_utils.Database) -> dict:
             "yt_search_count":     row[4],
             "chapter_count":       row[5],
             "calendar_count":      row[6],
+            "spotify_play_count":  row[7] or 0,
+            "earliest_spotify":    row[8] or "",
+            "latest_spotify":      row[9] or "",
         }
     except Exception:
         return {}
@@ -344,20 +350,27 @@ def _fetch_schema_context(db: sqlite_utils.Database) -> str:
 
 
 def _generate_rubric(stats: dict, model: str) -> str:
-    prompt = textwrap.dedent(f"""\
-        A personal behavioral dataset has these characteristics:
-        - YouTube watch history: {stats.get('watch_count','?')} videos, {stats.get('earliest_watch','')[:10]} to {stats.get('latest_watch','')[:10]}
-        - Google searches: {stats.get('google_search_count','?')} entries
-        - YouTube searches: {stats.get('yt_search_count','?')} unique queries
-        - {stats.get('chapter_count','?')} behavioral chapters (changepoint-detected)
-        - {stats.get('calendar_count','?')} calendar events
-        - Owner: 23-year-old, IST timezone, data dense 2024–2026, sparse 2020–2023
-
-        Generate exactly 5 rubric criteria for what makes a pattern GENUINELY SURPRISING
-        vs. expected for this person. Be specific — not "unusual time" but criteria that
-        distinguish a real statistical anomaly from a narrative cliché.
-        Return a numbered list only. No preamble.
-    """)
+    data_facts = [
+        f"- YouTube watch history: {stats.get('watch_count','?')} videos, "
+        f"{stats.get('earliest_watch','')[:10]} to {stats.get('latest_watch','')[:10]}",
+        f"- Google searches: {stats.get('google_search_count','?')} entries",
+        f"- YouTube searches: {stats.get('yt_search_count','?')} unique queries",
+        f"- {stats.get('chapter_count','?')} behavioral chapters (changepoint-detected)",
+        f"- {stats.get('calendar_count','?')} calendar events",
+    ]
+    if stats.get("spotify_play_count"):
+        data_facts.append(
+            f"- Spotify: {stats['spotify_play_count']} plays, "
+            f"{stats.get('earliest_spotify','')[:10]} to {stats.get('latest_spotify','')[:10]}"
+        )
+    prompt = (
+        "A personal behavioral dataset has these characteristics:\n"
+        + "\n".join(data_facts)
+        + "\n\nGenerate exactly 5 rubric criteria for what makes a pattern GENUINELY SURPRISING"
+        "\nvs. expected for this person. Be specific — not \"unusual time\" but criteria that"
+        "\ndistinguish a real statistical anomaly from a narrative cliché."
+        "\nReturn a numbered list only. No preamble."
+    )
     try:
         rubric, *_ = llm_chat(
             [{"role": "user", "content": prompt}],

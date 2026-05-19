@@ -127,6 +127,22 @@ def _fmt_google_searches(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _fmt_spotify_tracks(rows: list[dict]) -> str:
+    lines = []
+    for r in rows:
+        sim    = f"{r['similarity']:.0%}"
+        track  = r.get('track_name') or r.get('text') or ''
+        artist = r.get('artist_name') or ''
+        tags_raw = r.get('lastfm_tags') or r.get('artist_lastfm_tags') or '[]'
+        try:
+            tags = json.loads(tags_raw)[:3]
+            tag_str = f" [{', '.join(tags)}]" if tags else ""
+        except Exception:
+            tag_str = ""
+        lines.append(f"[Spotify track | sim {sim}] {track} — {artist}{tag_str}")
+    return "\n".join(lines)
+
+
 def _fetch_watches(db: sqlite_utils.Database, tr: TimeRange, limit: int) -> list[dict]:
     rows = db.execute(f"""
         SELECT
@@ -259,11 +275,12 @@ You have access to:
   [rewatch] = watched this video before
   [deep session] = session depth >3 (rabbit hole)
 - YouTube and Google search queries (what was on their mind)
+- Spotify listening history — tracks, artists, and Last.fm mood/genre tags (when available)
 - Behavioral chapters detected by changepoint analysis, each with a narrative reflection
 - Personal calendar events — lectures, exams, meetings, deadlines
 - Binge session structure: which sessions were long rabbit holes vs. casual browsing
 
-Answer with specific evidence. When you see [searched] or [bookmarked], call it out — that was an active choice, not passive consumption. When calendar events overlap with watch patterns, name the correlation explicitly."""
+Answer with specific evidence. When you see [searched] or [bookmarked], call it out — that was an active choice, not passive consumption. When Spotify track tags suggest a mood, tie it to the surrounding YouTube patterns if both are present. When calendar events overlap with watch or listening patterns, name the correlation explicitly."""
 
 
 def _build_user_prompt(question: str, context_parts: list[tuple[str, str]]) -> str:
@@ -293,11 +310,12 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
     # 1. Embed the question
     vector = embed_query(req.question)
 
-    # 2. Semantic retrieval from lancedb (all 4 tables)
-    reflections    = search_table("reflections", vector, top=req.top_semantic) if req.include_reflections else []
-    videos         = search_table("videos",         vector, top=req.top_semantic)
-    yt_searches    = search_table("searches",       vector, top=req.top_semantic)
-    google_results = search_table("google_searches", vector, top=req.top_semantic)
+    # 2. Semantic retrieval from lancedb (all 5 tables)
+    reflections     = search_table("reflections",    vector, top=req.top_semantic) if req.include_reflections else []
+    videos          = search_table("videos",         vector, top=req.top_semantic)
+    yt_searches     = search_table("searches",       vector, top=req.top_semantic)
+    google_results  = search_table("google_searches", vector, top=req.top_semantic)
+    spotify_results = search_table("spotify_tracks", vector, top=req.top_semantic)
 
     # 3. Temporal retrieval from SQLite (when time_range given)
     watches  = []
@@ -322,6 +340,8 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
         context_parts.append(("Related YouTube searches (semantic)", _fmt_searches(yt_searches)))
     if google_results:
         context_parts.append(("Related Google searches (semantic)", _fmt_google_searches(google_results)))
+    if spotify_results:
+        context_parts.append(("Related Spotify tracks (semantic)", _fmt_spotify_tracks(spotify_results)))
     if watches:
         context_parts.append(("Watch history (time range)", _fmt_watches(watches, req.time_range)))
     if sessions:
@@ -355,6 +375,9 @@ def chat_endpoint(req: ChatRequest, db: sqlite_utils.Database = Depends(get_db))
         sources.append({"kind": "search", "label": f'"{r.get("query") or r.get("text","")}"', "similarity": r["similarity"]})
     for r in google_results[:2]:
         sources.append({"kind": "google_search", "label": f'"{r.get("query") or r.get("text","")}"', "similarity": r["similarity"]})
+    for r in spotify_results[:3]:
+        label = f"{r.get('track_name','?')} — {r.get('artist_name','?')}"
+        sources.append({"kind": "spotify_track", "label": label, "similarity": r["similarity"]})
     if watches:
         sources.append({"kind": "watch", "label": f"{len(watches)} watches ({req.time_range.start}–{req.time_range.end})", "similarity": None})
     if sessions:
