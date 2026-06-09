@@ -5,9 +5,9 @@ from fastapi.testclient import TestClient
 
 
 def test_score_finding_happy_path():
-    from api.main import app
+    from echo.api.main import app
     mock_lf = MagicMock()
-    with patch("api.routers.speak.get_langfuse", return_value=mock_lf):
+    with patch("echo.api.routers.speak.get_langfuse", return_value=mock_lf):
         client = TestClient(app)
         resp = client.post("/api/speak/score-finding", json={
             "trace_id": "trace-abc",
@@ -20,9 +20,9 @@ def test_score_finding_happy_path():
 
 
 def test_score_finding_with_correction():
-    from api.main import app
+    from echo.api.main import app
     mock_lf = MagicMock()
-    with patch("api.routers.speak.get_langfuse", return_value=mock_lf):
+    with patch("echo.api.routers.speak.get_langfuse", return_value=mock_lf):
         client = TestClient(app)
         resp = client.post("/api/speak/score-finding", json={
             "trace_id": "trace-xyz",
@@ -38,7 +38,7 @@ def test_score_finding_with_correction():
 
 
 def test_score_finding_value_out_of_range_rejected():
-    from api.main import app
+    from echo.api.main import app
     client = TestClient(app)
     resp = client.post("/api/speak/score-finding", json={
         "trace_id": "trace-abc",
@@ -49,7 +49,7 @@ def test_score_finding_value_out_of_range_rejected():
 
 
 def test_score_finding_negative_value_rejected():
-    from api.main import app
+    from echo.api.main import app
     client = TestClient(app)
     resp = client.post("/api/speak/score-finding", json={
         "trace_id": "trace-abc",
@@ -61,9 +61,9 @@ def test_score_finding_negative_value_rejected():
 
 def test_score_finding_empty_correction_sends_none_comment():
     """Empty correction string must send comment=None, not comment=''."""
-    from api.main import app
+    from echo.api.main import app
     mock_lf = MagicMock()
-    with patch("api.routers.speak.get_langfuse", return_value=mock_lf):
+    with patch("echo.api.routers.speak.get_langfuse", return_value=mock_lf):
         client = TestClient(app)
         resp = client.post("/api/speak/score-finding", json={
             "trace_id": "tid",
@@ -77,9 +77,9 @@ def test_score_finding_empty_correction_sends_none_comment():
 
 def test_score_finding_langfuse_key_format():
     """Langfuse score key must be finding_{index} — index is 0-based primary-subset position."""
-    from api.main import app
+    from echo.api.main import app
     mock_lf = MagicMock()
-    with patch("api.routers.speak.get_langfuse", return_value=mock_lf):
+    with patch("echo.api.routers.speak.get_langfuse", return_value=mock_lf):
         client = TestClient(app)
         client.post("/api/speak/score-finding", json={"trace_id": "t", "finding_index": 3, "value": 0.5})
     score_call = mock_lf.score.call_args

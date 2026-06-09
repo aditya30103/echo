@@ -4,7 +4,7 @@ import sqlite3
 import pytest
 import sqlite_utils
 
-from api.routers.chat import _enrich_videos
+from echo.api.routers.chat import _enrich_videos
 
 
 @pytest.fixture

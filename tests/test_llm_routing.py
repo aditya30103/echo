@@ -1,7 +1,7 @@
 """Tests for api/llm.py:available_models() — pure env-var logic."""
 
 import pytest
-import api.llm as llm_module
+import echo.api.llm as llm_module
 
 
 @pytest.fixture(autouse=True)

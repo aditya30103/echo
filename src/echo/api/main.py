@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import timeline, chat, insights, speak
+from echo.api.routers import timeline, chat, insights, speak
 
 app = FastAPI(title="Echo API", version="0.1.0")
 

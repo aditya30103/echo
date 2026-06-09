@@ -15,7 +15,7 @@ from typing import List
 
 import pytest
 
-from api.routers import speak as speak_mod
+from echo.api.routers import speak as speak_mod
 
 
 # ── Fake observation generator ───────────────────────────────────────────────

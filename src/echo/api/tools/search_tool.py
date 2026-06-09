@@ -2,7 +2,7 @@
 
 import json
 
-from api.vec import embed_query, search_table
+from echo.api.vec import embed_query, search_table
 
 _RAW_TABLES       = {"videos", "searches", "google_searches", "spotify_tracks"}
 _NARRATIVE_TABLES = {"reflections"}

@@ -9,13 +9,13 @@ from unittest.mock import patch, MagicMock
 # ── run_pelt ──────────────────────────────────────────────────────────────────
 
 def test_pelt_invalid_table():
-    from api.tools.pelt_tool import run_pelt
+    from echo.api.tools.pelt_tool import run_pelt
     result = run_pelt(table="nonexistent_table", ts_col="watched_at")
     assert "ERROR" in result or "error" in result.lower()
 
 
 def test_pelt_invalid_freq():
-    from api.tools.pelt_tool import run_pelt
+    from echo.api.tools.pelt_tool import run_pelt
     result = run_pelt(table="watches", ts_col="watched_at", freq="INVALID")
     assert "ERROR" in result or "error" in result.lower()
 
@@ -30,7 +30,7 @@ def test_pelt_happy_path(tmp_path, monkeypatch):
     """
     from echo.config import EchoConfig, TakeoutPaths
     from echo.pipeline import ingest
-    from api.tools import pelt_tool
+    from echo.api.tools import pelt_tool
     from tests.fixtures import build_activity_zip, build_youtube_zip
 
     cfg = EchoConfig(
@@ -55,19 +55,19 @@ def test_pelt_happy_path(tmp_path, monkeypatch):
 # ── run_clustering ─────────────────────────────────────────────────────────────
 
 def test_clustering_invalid_table():
-    from api.tools.clustering_tool import run_clustering
+    from echo.api.tools.clustering_tool import run_clustering
     result = run_clustering(table="nonexistent_table")
     assert "ERROR" in result
 
 
 def test_clustering_n_clusters_below_min():
-    from api.tools.clustering_tool import run_clustering
+    from echo.api.tools.clustering_tool import run_clustering
     result = run_clustering(table="videos", n_clusters=1)
     assert "ERROR" in result
 
 
 def test_clustering_n_clusters_exceeds_rows():
-    from api.tools.clustering_tool import run_clustering
+    from echo.api.tools.clustering_tool import run_clustering
     # n_clusters=9999 will always exceed actual row count in any realistic table
     result = run_clustering(table="videos", n_clusters=9999)
     assert "ERROR" in result
@@ -80,7 +80,7 @@ def test_clustering_happy_path(tmp_path, monkeypatch):
     fixtures.build_lancedb_videos, then monkeypatches the tool's _LANCE_PATH
     so the tool reads from the fixture instead of ~/.echo/lancedb/.
     """
-    from api.tools import clustering_tool
+    from echo.api.tools import clustering_tool
     from tests.fixtures import build_lancedb_videos
 
     lance_dir = build_lancedb_videos(tmp_path, n_rows=12)
@@ -97,7 +97,7 @@ def test_clustering_happy_path(tmp_path, monkeypatch):
 # ── run_youtube_lookup ────────────────────────────────────────────────────────
 
 def test_youtube_missing_api_key(monkeypatch):
-    from api.tools import youtube_tool
+    from echo.api.tools import youtube_tool
 
     # `run_youtube_lookup` calls `_load_env` which reads .env via echo.config
     # and may re-populate YOUTUBE_API_KEY from the file on the dev's host.
@@ -111,7 +111,7 @@ def test_youtube_missing_api_key(monkeypatch):
 
 
 def test_youtube_happy_path():
-    from api.tools.youtube_tool import run_youtube_lookup
+    from echo.api.tools.youtube_tool import run_youtube_lookup
 
     mock_api_response = {
         "items": [{
@@ -141,7 +141,7 @@ def test_youtube_happy_path():
 
 
 def test_youtube_video_not_found():
-    from api.tools.youtube_tool import run_youtube_lookup
+    from echo.api.tools.youtube_tool import run_youtube_lookup
 
     with patch("googleapiclient.discovery.build") as mock_build:
         mock_yt = MagicMock()
@@ -158,7 +158,7 @@ def test_youtube_video_not_found():
 # ── execute_python sandbox gate ───────────────────────────────────────────────
 
 def test_execute_python_sandbox_disabled():
-    from api.tools.python_tool import execute_python
+    from echo.api.tools.python_tool import execute_python
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "false"}):
         result = execute_python("print('hello')")
     assert "[RAW-COMPUTED] ERROR" in result
@@ -166,28 +166,28 @@ def test_execute_python_sandbox_disabled():
 
 
 def test_execute_python_sandbox_enabled():
-    from api.tools.python_tool import execute_python
+    from echo.api.tools.python_tool import execute_python
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "true"}):
         result = execute_python("print('hello world')")
     assert "hello world" in result
 
 
 def test_execute_python_scipy_available():
-    from api.tools.python_tool import execute_python
+    from echo.api.tools.python_tool import execute_python
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "true"}):
         result = execute_python("import scipy; print('scipy ok')")
     assert "scipy ok" in result
 
 
 def test_execute_python_sklearn_available():
-    from api.tools.python_tool import execute_python
+    from echo.api.tools.python_tool import execute_python
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "true"}):
         result = execute_python("from sklearn.cluster import KMeans; print('sklearn ok')")
     assert "sklearn ok" in result
 
 
 def test_execute_python_statsmodels_available():
-    from api.tools.python_tool import execute_python
+    from echo.api.tools.python_tool import execute_python
     with patch.dict(os.environ, {"UNSAFE_PYTHON_SANDBOX": "true"}):
         result = execute_python("import statsmodels.api as sm; print('sm ok')")
     assert "sm ok" in result
@@ -196,7 +196,7 @@ def test_execute_python_statsmodels_available():
 # ── web_search tool ───────────────────────────────────────────────────────────
 
 def test_web_search_rate_limit_blocks_sixth_call():
-    from api.tools.web_search_tool import run_web_search, _RATE_LIMIT
+    from echo.api.tools.web_search_tool import run_web_search, _RATE_LIMIT
     state = {"web_search_count": _RATE_LIMIT}
     result = run_web_search("anything", k=3, session_state=state)
     assert "BLOCKED" in result
@@ -204,7 +204,7 @@ def test_web_search_rate_limit_blocks_sixth_call():
 
 
 def test_web_search_happy_path():
-    from api.tools.web_search_tool import run_web_search
+    from echo.api.tools.web_search_tool import run_web_search
     mock_results = [
         {"title": "Result 1", "body": "Snippet about topic", "href": "https://example.com/1"},
         {"title": "Result 2", "body": "Another snippet",    "href": "https://example.com/2"},
@@ -219,7 +219,7 @@ def test_web_search_happy_path():
 
 
 def test_web_search_empty_results_flags_rate_limit():
-    from api.tools.web_search_tool import run_web_search
+    from echo.api.tools.web_search_tool import run_web_search
     state: dict = {}
     with patch("duckduckgo_search.DDGS") as mock_ddgs:
         mock_ddgs.return_value.text.return_value = []
@@ -229,7 +229,7 @@ def test_web_search_empty_results_flags_rate_limit():
 
 
 def test_web_search_exception_increments_and_returns_error():
-    from api.tools.web_search_tool import run_web_search
+    from echo.api.tools.web_search_tool import run_web_search
     state: dict = {}
     with patch("duckduckgo_search.DDGS") as mock_ddgs:
         mock_ddgs.return_value.text.side_effect = RuntimeError("network failure")
@@ -240,7 +240,7 @@ def test_web_search_exception_increments_and_returns_error():
 
 
 def test_dispatch_web_search_routing():
-    from api.tools import dispatch
+    from echo.api.tools import dispatch
     state: dict = {}
     with patch("duckduckgo_search.DDGS") as mock_ddgs:
         mock_ddgs.return_value.text.return_value = [
@@ -254,7 +254,7 @@ def test_dispatch_web_search_routing():
 
 def test_dispatch_passes_session_state():
     """dispatch() must accept session_state without raising."""
-    from api.tools import dispatch
+    from echo.api.tools import dispatch
     state: dict = {}
     # run_sql is always available in phase 1; this just checks the call signature
     result = dispatch("run_sql", {"query": "SELECT 1"}, phase=1, session_state=state)

@@ -1,8 +1,8 @@
 """Archaeology timeline queries — IST-aware."""
 
 from fastapi import APIRouter, Depends, Query
-from api.constants import IST_OFFSET
-from api.db import get_db
+from echo.api.constants import IST_OFFSET
+from echo.api.db import get_db
 import sqlite_utils
 
 router = APIRouter(prefix="/api/timeline", tags=["timeline"])

@@ -5,7 +5,7 @@ existing tags, and the unknown-tag fallback to narrative.
 """
 
 import pytest
-from api.routers.speak import _validate_findings
+from echo.api.routers.speak import _validate_findings
 
 
 def _make(tag: str, confidence: str = "high") -> dict:

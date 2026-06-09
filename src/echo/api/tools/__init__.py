@@ -2,13 +2,13 @@
 
 import json
 
-from api.tools.sql_tool          import run_sql
-from api.tools.python_tool       import execute_python
-from api.tools.search_tool       import vector_search
-from api.tools.pelt_tool         import run_pelt
-from api.tools.clustering_tool   import run_clustering
-from api.tools.youtube_tool      import run_youtube_lookup
-from api.tools.web_search_tool   import run_web_search
+from echo.api.tools.sql_tool          import run_sql
+from echo.api.tools.python_tool       import execute_python
+from echo.api.tools.search_tool       import vector_search
+from echo.api.tools.pelt_tool         import run_pelt
+from echo.api.tools.clustering_tool   import run_clustering
+from echo.api.tools.youtube_tool      import run_youtube_lookup
+from echo.api.tools.web_search_tool   import run_web_search
 
 # Tables whose content is LLM-generated narrative — blocked in Phase 1.
 _NARRATIVE_VECTOR_TABLES = {"reflections"}

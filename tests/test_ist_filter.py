@@ -37,7 +37,7 @@ def ist_to_utc_str(ist_hour, ist_minute=0, date="2022-06-15"):
 def test_night_filter_includes_2330_ist(mem_db):
     """23:30 IST watch must appear in night archaeology."""
     mem_db["watches"].insert({"id": 1, "video_id": "v1", "watched_at": ist_to_utc_str(23, 30), "title": "Late video"})
-    from api.constants import IST_OFFSET
+    from echo.api.constants import IST_OFFSET
     rows = mem_db.execute(f"""
         SELECT id FROM watches w
         WHERE strftime('%H', datetime(w.watched_at, '{IST_OFFSET}')) >= '23'
@@ -49,7 +49,7 @@ def test_night_filter_includes_2330_ist(mem_db):
 def test_night_filter_includes_0200_ist(mem_db):
     """02:00 IST watch must appear in night archaeology."""
     mem_db["watches"].insert({"id": 2, "video_id": "v2", "watched_at": ist_to_utc_str(2, 0), "title": "2am video"})
-    from api.constants import IST_OFFSET
+    from echo.api.constants import IST_OFFSET
     rows = mem_db.execute(f"""
         SELECT id FROM watches w
         WHERE strftime('%H', datetime(w.watched_at, '{IST_OFFSET}')) >= '23'
@@ -61,7 +61,7 @@ def test_night_filter_includes_0200_ist(mem_db):
 def test_night_filter_excludes_1400_ist(mem_db):
     """14:00 IST (afternoon) watch must NOT appear in night archaeology."""
     mem_db["watches"].insert({"id": 3, "video_id": "v3", "watched_at": ist_to_utc_str(14, 0), "title": "Afternoon video"})
-    from api.constants import IST_OFFSET
+    from echo.api.constants import IST_OFFSET
     rows = mem_db.execute(f"""
         SELECT id FROM watches w
         WHERE strftime('%H', datetime(w.watched_at, '{IST_OFFSET}')) >= '23'
@@ -73,7 +73,7 @@ def test_night_filter_excludes_1400_ist(mem_db):
 def test_night_filter_excludes_0400_ist(mem_db):
     """04:00 IST exactly must NOT appear (boundary is exclusive)."""
     mem_db["watches"].insert({"id": 4, "video_id": "v4", "watched_at": ist_to_utc_str(4, 0), "title": "4am boundary"})
-    from api.constants import IST_OFFSET
+    from echo.api.constants import IST_OFFSET
     rows = mem_db.execute(f"""
         SELECT id FROM watches w
         WHERE strftime('%H', datetime(w.watched_at, '{IST_OFFSET}')) >= '23'

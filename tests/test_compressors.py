@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from api.tools.compressors import (
+from echo.api.tools.compressors import (
     compress_assistant,
     compress_external,
     compress_narrative,
@@ -348,7 +348,7 @@ def test_compress_observation_empty_content_safe():
 
 def test_compress_observation_compressor_exception_falls_back(monkeypatch):
     """If a compressor raises mid-dispatch, the wrapper catches it cleanly."""
-    from api.tools import compressors
+    from echo.api.tools import compressors
 
     def explode(_body):
         raise RuntimeError("simulated compressor bug")

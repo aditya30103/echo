@@ -3,8 +3,8 @@
 from fastapi import APIRouter, Depends, Query
 import sqlite_utils
 
-from api.constants import IST_OFFSET
-from api.db import get_db
+from echo.api.constants import IST_OFFSET
+from echo.api.db import get_db
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 

@@ -89,7 +89,7 @@ def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None
     # Import lazily so `echo --help` doesn't pay the FastAPI startup cost.
     import uvicorn
 
-    from api.main import app  # type: ignore[import-not-found]
+    from echo.api.main import app
 
     ui_dist = _ui_dist_path()
     if ui_dist.is_dir() and (ui_dist / "index.html").is_file():

@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import sqlite_utils
 
-from api.constants import IST_OFFSET
-from api.db import get_db
-from api.vec import embed_query, search_table
-from api.llm import chat as llm_chat, available_models
+from echo.api.constants import IST_OFFSET
+from echo.api.db import get_db
+from echo.api.vec import embed_query, search_table
+from echo.api.llm import chat as llm_chat, available_models
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 

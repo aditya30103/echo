@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 def test_speak_endpoint_propagates_token_counts():
     """The /api/speak endpoint must return token counts from the finish event."""
-    from api.main import app
-    from api.db import get_db
+    from echo.api.main import app
+    from echo.api.db import get_db
 
     def fake_loop(req, db):
         yield {
@@ -32,7 +32,7 @@ def test_speak_endpoint_propagates_token_counts():
     app.dependency_overrides[get_db] = lambda: MagicMock()
 
     try:
-        with patch("api.routers.speak._react_loop", fake_loop):
+        with patch("echo.api.routers.speak._react_loop", fake_loop):
             client = TestClient(app)
             resp = client.post("/api/speak", json={"query": "test"})
     finally:
@@ -49,7 +49,7 @@ def test_speak_endpoint_propagates_token_counts():
 
 def test_speak_response_has_token_fields():
     """SpeakResponse model must declare total_input_tokens and total_output_tokens."""
-    from api.routers.speak import SpeakResponse
+    from echo.api.routers.speak import SpeakResponse
     import inspect
 
     fields = SpeakResponse.model_fields
@@ -59,7 +59,7 @@ def test_speak_response_has_token_fields():
 
 def test_speak_response_token_fields_default_zero():
     """Token count fields must default to 0 so old clients don't break."""
-    from api.routers.speak import SpeakResponse
+    from echo.api.routers.speak import SpeakResponse
 
     resp = SpeakResponse(
         query="test",
@@ -77,7 +77,7 @@ def test_speak_response_token_fields_default_zero():
 
 def test_speak_response_token_fields_populated():
     """SpeakResponse must store non-zero token counts when provided."""
-    from api.routers.speak import SpeakResponse
+    from echo.api.routers.speak import SpeakResponse
 
     resp = SpeakResponse(
         query="test",
@@ -104,7 +104,7 @@ def test_speak_response_token_fields_populated():
 
 def test_react_loop_reports_actual_round_on_exception_break(monkeypatch):
     """When llm_chat raises mid-run, rounds_used = round reached, hit_limit = False."""
-    from api.routers import speak as speak_mod
+    from echo.api.routers import speak as speak_mod
 
     # call_count tracks ReAct-loop llm_chat calls only — the rubric generator
     # is mocked out separately so it doesn't consume an iteration.
@@ -144,7 +144,7 @@ def test_react_loop_reports_actual_round_on_exception_break(monkeypatch):
 
 def test_react_loop_natural_completion_reports_max_rounds(monkeypatch):
     """When the loop runs out of rounds without finish, hit_limit=True, rounds_used=max."""
-    from api.routers import speak as speak_mod
+    from echo.api.routers import speak as speak_mod
 
     def fake_llm_chat(*_args, **_kwargs):
         # Never finish; keep calling a tool every round.

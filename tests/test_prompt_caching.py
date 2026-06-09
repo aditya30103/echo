@@ -31,7 +31,7 @@ def _wire_streaming_mock(mock_client, resp):
 
 def test_chat_cache_prefix_wraps_system_into_two_blocks():
     """When cached_prefix is set on the Anthropic path, system becomes a two-block list."""
-    from api.llm import chat
+    from echo.api.llm import chat
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
@@ -56,7 +56,7 @@ def test_chat_cache_prefix_wraps_system_into_two_blocks():
 
 def test_chat_no_prefix_uses_string_system():
     """Without cached_prefix, system is a plain string — no caching overhead."""
-    from api.llm import chat
+    from echo.api.llm import chat
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
@@ -71,7 +71,7 @@ def test_chat_no_prefix_uses_string_system():
 
 def test_chat_cache_read_tokens_returned_in_usage():
     """Usage dict includes cache_read_input_tokens from Anthropic response."""
-    from api.llm import chat
+    from echo.api.llm import chat
 
     with patch("anthropic.Anthropic") as mock_cls:
         mock_client = mock_cls.return_value
@@ -86,7 +86,7 @@ def test_chat_cache_read_tokens_returned_in_usage():
 
 def test_non_anthropic_path_injects_prefix_into_system_message():
     """On OpenAI path, cached_prefix is prepended to the system message content."""
-    from api.llm import chat
+    from echo.api.llm import chat
 
     mock_resp = MagicMock()
     mock_resp.choices = [MagicMock(message=MagicMock(content="ok"), finish_reason="stop")]
@@ -95,7 +95,7 @@ def test_non_anthropic_path_injects_prefix_into_system_message():
 
     env = {"OPENAI_API_KEY": "fake-openai"}
 
-    with patch("openai.OpenAI") as mock_cls, patch("api.llm._load_env"):
+    with patch("openai.OpenAI") as mock_cls, patch("echo.api.llm._load_env"):
         mock_client = mock_cls.return_value
         mock_client.chat.completions.create.return_value = mock_resp
 
@@ -115,7 +115,7 @@ def test_non_anthropic_path_injects_prefix_into_system_message():
 
 def test_inject_prefix_no_system_message():
     """_inject_prefix creates a system message when none exists."""
-    from api.llm import _inject_prefix
+    from echo.api.llm import _inject_prefix
 
     result = _inject_prefix([{"role": "user", "content": "hi"}], "my preamble")
     assert result[0]["role"] == "system"

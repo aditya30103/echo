@@ -10,11 +10,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import sqlite_utils
 
-from api.db import get_db
-from api.llm import chat as llm_chat
-from api.observability import get_langfuse
-from api.tools import dispatch, tool_descriptions
-from api.tools.compressors import compress_assistant, compress_observation
+from echo.api.db import get_db
+from echo.api.llm import chat as llm_chat
+from echo.api.observability import get_langfuse
+from echo.api.tools import dispatch, tool_descriptions
+from echo.api.tools.compressors import compress_assistant, compress_observation
 
 router = APIRouter(prefix="/api/speak", tags=["speak"])
 
