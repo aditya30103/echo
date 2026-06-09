@@ -1,20 +1,24 @@
 name: Smoke
 
 # Catches "works on my machine" regressions before merge to master.
-# Exercises:
-#   1. `pip install -e ".[dev]"` against the current pyproject.toml
-#   2. Full pytest suite (115 tests including the per-step pipeline integration tests)
-#   3. End-to-end CLI flow against the synthetic Takeout fixtures:
-#         echo init --non-interactive -> echo ingest -> echo signals -> echo detect -> echo doctor
-#      API-bound steps (enrich, reflect, embed) are skipped - they need
-#      keys we don't ship to CI.
 #
-# `python -m echo.cli.main` is used everywhere instead of the bare `echo`
-# command because bash's built-in `echo` would shadow the installed script.
+# Two jobs:
+#   test       — editable install (developer's view): full pytest + end-to-end CLI
+#                flow against the synthetic Takeout fixtures (init -> ingest ->
+#                signals -> detect -> doctor). API-bound steps (enrich, reflect,
+#                embed) are skipped — they need keys we don't ship to CI.
+#   wheel-smoke — packaged-user's view: builds the wheel, installs it into a CLEAN
+#                venv, and boots it from OUTSIDE the repo. This is the only job that
+#                catches packaging regressions like api/ living outside the wheel —
+#                the `test` job's editable+repo-root install cannot see them.
+#
+# `python -m echo.cli.main` is used in the `test` job instead of the bare `echo`
+# command because bash's built-in `echo` would shadow the installed script. The
+# wheel-smoke job calls the script by absolute venv path, so no shadowing applies.
 
 on:
   push:
-    branches: [master, packaging-v1]
+    branches: [master]
   pull_request:
     branches: [master]
 
@@ -99,3 +103,54 @@ jobs:
           assert db['chapters'].count >= 1, 'PELT produced no chapters'
           print('All schema + row count assertions passed.')
           "
+
+  wheel-smoke:
+    # Single Python on purpose: building+installing the wheel is the slow part, and
+    # a packaging defect is not Python-version-specific. Keep PR feedback fast; add a
+    # matrix only if a version-specific packaging bug ever appears.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build the wheel
+        # Uses the committed src/echo/ui/dist (no Node needed here). publish.yml
+        # rebuilds the UI from source for real releases; this job only verifies the
+        # packaging shape, so the committed bundle is what we want to exercise.
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Install the wheel into a clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke-venv"
+          "$RUNNER_TEMP/smoke-venv/bin/pip" install --upgrade pip
+          "$RUNNER_TEMP/smoke-venv/bin/pip" install dist/*.whl
+
+      - name: Boot from outside the repo (the pip-install user's view)
+        # cd to a dir that is NOT the repo root, so the source tree is absent from
+        # sys.path. If `echo serve`'s app imports here, the backend genuinely ships
+        # inside the wheel. This is the CI half of the 5C packaged-install guard;
+        # tests/test_packaged_imports.py is the fast local half.
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/smoke-venv/bin/echo" --help
+          "$RUNNER_TEMP/smoke-venv/bin/python" - <<'PY'
+          import echo.api.main as m
+          paths = {getattr(r, "path", None) for r in m.app.routes}
+          assert "/api/health" in paths, f"health route missing: {sorted(p for p in paths if p)}"
+
+          # The bundled SvelteKit UI must ship in the wheel too (hatchling
+          # force-include of src/echo/ui/dist). echo serve mounts it; a missing
+          # bundle would silently serve no frontend.
+          from importlib.resources import files
+          index = files("echo") / "ui" / "dist" / "index.html"
+          assert index.is_file(), "ui/dist/index.html not shipped in the wheel"
+
+          print("WHEEL_BOOT_OK")
+          PY

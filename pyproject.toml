@@ -66,11 +66,12 @@ echo = "echo.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/echo"]
-# Include the bundled UI build artifacts if they exist. `echo serve` reads
-# from src/echo/ui/dist; the directory is created by `cd ui && npm run build
-# && cp -r build ../src/echo/ui/dist` and shipped with the wheel.
-[tool.hatch.build.targets.wheel.force-include]
-"src/echo/ui/dist" = "echo/ui/dist"
+# The bundled SvelteKit UI lives at src/echo/ui/dist (committed; rebuilt from
+# source by publish.yml for releases). Because it sits *inside* the package dir,
+# `packages = ["src/echo"]` already ships it — hatchling includes non-.py files
+# under a package. A force-include mapping it to echo/ui/dist would add the same
+# archive path twice and hard-fail the build ("a second file is being added at
+# the same path"), so there is deliberately no force-include here.
 
 [tool.hatch.build.targets.sdist]
 include = [
