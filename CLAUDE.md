@@ -11,19 +11,32 @@ User data is personal and sensitive — handle with care.
 **Stack:** Python + FastAPI + SQLite (sqlite-utils) + LanceDB + SvelteKit + Anthropic (Claude)
 **License:** MIT (`LICENSE` at repo root)
 **Owner:** Aditya Arya (IST timezone)
-**Status:** Echo v3 live on master. OSS pre-release cleanup in progress (2026-05-19).
+**Status:** Echo v3 live + publicly launched. Hardening week shipped 2026-06-09 (api/ packaging fix, local Ollama, CI wheel-smoke, agent + reflect tests; 204 tests green). PyPI publish is wired and gated — pending the owner's one-time trusted-publisher setup (see `RELEASING.md`).
 
 ---
 
-## Status — v3 on master
+## Status — v3 on master, hardened, PyPI-ready
 
-Packaged CLI (`echo` command via `pip install -e .`) is live on master.
-All 8 pipeline steps migrated. `echo serve` runs FastAPI + SvelteKit on one port.
+Packaged CLI (`echo` command via `pip install -e .`) is live on master. All 8 pipeline
+steps migrated. `echo serve` runs FastAPI + SvelteKit on one port. 204 tests green.
 
-Active deferred work is tracked in `TODOS.md`. Key pending items:
-- Integration tests + GitHub Action smoke test
-- SvelteKit adapter-static build step (adapter is configured; build output missing)
+**Hardening week (2026-06-09) shipped** (commits `854e585`→`6fcbfb0`):
+- `api/` moved into `src/echo/api/` — it was outside the wheel, so `echo serve`
+  ImportError'd on any clean `pip install`. Guarded by `tests/test_packaged_imports.py`.
+- Local **Ollama** provider — run the agent with no cloud key (`OLLAMA_BASE_URL`).
+- CI **wheel-smoke** gate (`smoke.yml`) — also caught a 2nd packaging bug (force-include
+  double-inclusion that broke `python -m build` entirely).
+- Tests for the agent ReAct loop, the Phase-1 narrative block, and `reflect.py`.
+- Integration tests + GitHub Action smoke + adapter-static build: all DONE.
+
+**PyPI publish** (`echo-archaeology`, v0.1.0): pipeline wired in `publish.yml` (boot-gated,
+TestPyPI rehearsal via `workflow_dispatch`) but **not yet published** — needs the owner's
+one-time trusted-publisher setup + a `v0.1.0` tag. Full steps in `RELEASING.md`.
+
+Active deferred work in `TODOS.md`:
 - Spotify Phase 2 (`echo enrich-spotify` full run, quota-blocked)
+- Ollama reachability ping in `available_models()`; Echo Speaks context-mgmt Layers 2/3;
+  LAION-CLAP audio embeddings
 
 ---
 
@@ -86,25 +99,32 @@ See `docs/RUNBOOK.md` for full usage. See `docs/DATA.md` for what every table an
 
 ## Key files
 
+All installable code lives under `src/echo/`: `pipeline/` (the 8 steps), `cli/` (Typer
+commands), `api/` (FastAPI backend), `config.py`. Paths below are repo-root-relative.
+
 | File / dir | Purpose |
 |------------|---------|
-| `ingest.py` | Loads Takeout + Spotify zips into echo.db (8 tables) |
-| `enrich.py` | YouTube Data API enrichment (video_metadata) |
-| `enrich_spotify.py` | Spotify Web API enrichment (spotify_tracks: duration, explicit, URI verify) |
-| `enrich_music_meta.py` | Last.fm tag enrichment (artist + top-N track tags; mood/genre dimension for cross-modal agent queries) |
-| `detect.py` | PELT changepoint detection → chapters + chapter_fingerprints |
-| `signals.py` | Engagement scoring → watch_signals + spotify_signals |
-| `reflect.py` | GPT-4o narrative reflection → reflections (reads private/annotations.yaml) |
-| `embed.py` | LanceDB vector embedding → 5 tables (reflections, videos, searches, google_searches, spotify_tracks) |
-| `embed_common.py` | Shared embedding utilities (load_env, get_embed_client, ALL_TABLES) |
-| `viewer.py` | Static HTML viewer for chapter reflections (proofreading tool) |
+| `src/echo/pipeline/ingest.py` | Loads Takeout + Spotify zips into echo.db (8 tables) |
+| `src/echo/pipeline/enrich.py` | YouTube Data API enrichment (video_metadata) |
+| `src/echo/pipeline/enrich_spotify.py` | Spotify Web API enrichment (spotify_tracks: duration, explicit, URI verify) |
+| `src/echo/pipeline/enrich_music_meta.py` | Last.fm tag enrichment (artist + top-N track tags; mood/genre dimension for cross-modal agent queries) |
+| `src/echo/pipeline/detect.py` | PELT changepoint detection → chapters + chapter_fingerprints |
+| `src/echo/pipeline/signals.py` | Engagement scoring → watch_signals + spotify_signals |
+| `src/echo/pipeline/reflect.py` | GPT-4o narrative reflection → reflections (reads private/annotations.yaml) |
+| `src/echo/pipeline/embed.py` | LanceDB vector embedding → 5 tables (reflections, videos, searches, google_searches, spotify_tracks) |
+| `src/echo/cli/main.py` | Typer CLI entrypoint (`echo` command); `_PIPELINE_STEPS` orchestration for `echo run` |
+| `src/echo/cli/wizard.py` | `echo init` interactive setup wizard |
+| `src/echo/cli/serve.py` | `echo serve` — boots `echo.api.main:app` + mounts the SvelteKit build |
+| `src/echo/cli/view_reflections.py` | Static HTML viewer for chapter reflections (proofreading tool; was the old `viewer.py`) |
+| `src/echo/config.py` | EchoConfig dataclass + layered TOML/.env loader (canonical config at `~/.echo/.env`) |
 | `run.bat` / `run.sh` | One-line Datasette launchers (Windows / *nix) |
-| `api/` | FastAPI backend — routers: timeline, chat, insights, speak |
-| `api/tools/` | Agent toolkit: sql, python, search, pelt, clustering, youtube, web_search |
-| `api/tools/compressors.py` | Per-tool observation compression (Layer 1 context mgmt) |
-| `api/llm.py` | LLM routing: Anthropic native → OpenAI → OpenRouter; prompt caching |
-| `api/observability.py` | Langfuse tracing wrapper (noop if keys absent) |
-| `ui/` | SvelteKit frontend (Echo Speaks landing + Binge Sessions + Agency Map + Ask Echo) |
+| `src/echo/api/` | FastAPI backend — routers: timeline, chat, insights, speak. Lives INSIDE the package (moved 2026-06-09) so `echo serve` works after `pip install` |
+| `src/echo/api/routers/speak.py` | Echo Speaks ReAct loop (`_react_loop`) + Phase-1 narrative blindness enforcement |
+| `src/echo/api/tools/` | Agent toolkit: sql, python, search, pelt, clustering, youtube, web_search |
+| `src/echo/api/tools/compressors.py` | Per-tool observation compression (Layer 1 context mgmt) |
+| `src/echo/api/llm.py` | LLM routing: Anthropic native → OpenAI → OpenRouter → Ollama (local, no-key fallback). Shared `_openai_compat_chat()` helper; prompt caching |
+| `src/echo/api/observability.py` | Langfuse tracing wrapper (noop if keys absent) |
+| `ui/` | SvelteKit frontend (Echo Speaks landing + Binge Sessions + Agency Map + Ask Echo); built bundle committed at `src/echo/ui/dist/` and shipped in the wheel |
 | `_data/` (gitignored) | Raw Takeout / Spotify zips live here |
 | `private/` (gitignored) | Per-user `annotations.yaml` with life context |
 | `annotations.example.yaml` | Template — copy to `private/annotations.yaml` to add LIFE CONTEXT |
@@ -113,9 +133,12 @@ See `docs/RUNBOOK.md` for full usage. See `docs/DATA.md` for what every table an
 | `docs/DESIGN.md` | Visual design system — two-temperature principle, color tokens, typography, component patterns. Read before touching any UI. |
 | `CLAUDE.md` / `AGENTS.md` | AI context (AGENTS.md is a stub; CLAUDE.md is source of truth) |
 | `SETUP.md` | Onboarding — install, first run, troubleshooting |
+| `RELEASING.md` | PyPI release process — trusted-publisher setup, TestPyPI rehearsal, tag-to-release |
+| `CHANGELOG.md` | Release notes (semver) |
 | `docs/RUNBOOK.md` | How to operate the pipeline |
 | `docs/DATA.md` | What every table and column means |
 | `TODOS.md` | Deferred work + active focus pointer |
+| `.github/workflows/` | `smoke.yml` (PR tests + wheel-smoke), `publish.yml` (PyPI via trusted publishing) |
 | `Dockerfile`, `ui/Dockerfile`, `docker-compose.yml` | Container setup |
 | `.env` (gitignored) / `.env.example` (committed) | API key configuration |
 | `pyproject.toml` | Package metadata + dependencies (canonical; `requirements.txt` retired) |
@@ -154,7 +177,20 @@ See `docs/RUNBOOK.md` for full usage. See `docs/DATA.md` for what every table an
   `ts = row["ts"].replace("Z", "+00:00")`. SQLite `strftime`/`datetime` handle
   both identically — the normalization is for string-comparison safety only.
 - `LANGFUSE_HOST` (NOT `LANGFUSE_BASE_URL`) is the env var name read by
-  `api/observability.py`. The other name is silently ignored.
+  `src/echo/api/observability.py`. The other name is silently ignored.
+- Ollama is the only no-cloud-key LLM path. `model="auto"` falls back to it ONLY when no
+  cloud key is set; `model="ollama"` forces it; it is never auto-preferred over a cloud
+  key (local models are weaker on the multi-step Speaks loop). Speaks runs 20–50 rounds
+  with a large concatenated prefix, so a short-context local model overflows mid-run —
+  `OLLAMA_MODEL` defaults to `llama3.1` (128k ctx). The client sets a finite timeout so a
+  configured-but-down server fails cleanly instead of hanging.
+- `echo serve` imports `echo.api.main:app` (the backend is `src/echo/api/`, INSIDE the
+  package). Never reintroduce a top-level `api/` — it won't ship in the wheel and breaks
+  `echo serve` on a clean install. `tests/test_packaged_imports.py` + the CI wheel-smoke
+  guard against exactly this.
+- `pyproject.toml` wheel config: do NOT add a `force-include` for `src/echo/ui/dist` —
+  it already ships via `packages = ["src/echo"]`, and a force-include double-adds the
+  same path and hard-fails `python -m build`.
 
 ---
 
