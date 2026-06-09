@@ -1,9 +1,15 @@
 """LLM provider routing for the Echo API.
 
-Priority order:
+Priority order (for model="auto"):
   1. ANTHROPIC_API_KEY  → native Anthropic SDK  (Claude Sonnet 4.6)
   2. OPENAI_API_KEY     → OpenAI SDK            (GPT-4o)
   3. OPENROUTER_API_KEY → OpenAI-compat client  (routes to GPT-4o or Claude)
+  4. OLLAMA_BASE_URL    → local OpenAI-compat   (no API key needed; last fallback)
+
+Ollama is the only no-cloud-key path: `auto` falls back to it only when no cloud
+key is set, so a user with zero API keys can still run Echo locally. `model="ollama"`
+forces it explicitly even when cloud keys exist. It is never auto-preferred over a
+cloud key — local models are weaker on the multi-step Speaks ReAct loop.
 
 The chat() function is the single call-site for all LLM text generation.
 """
@@ -14,6 +20,17 @@ import os
 CLAUDE_MODEL   = "claude-sonnet-4-6"
 GPT4O_MODEL    = "openai/gpt-4o"          # OpenRouter slug
 GPT4O_DIRECT   = "gpt-4o"                 # OpenAI direct slug
+
+# Default local model. llama3.1 ships a 128k context window — the Speaks agent
+# concatenates a large schema/rubric prefix and runs 20-50 rounds, so a short-ctx
+# default (e.g. an 8k model) would overflow mid-run. Override with OLLAMA_MODEL.
+DEFAULT_OLLAMA_MODEL = "llama3.1"
+# Local inference is slow (CPU token rates), so a 50-round finish call can take
+# minutes. This timeout is finite ONLY to avoid an infinite hang when OLLAMA_BASE_URL
+# points at a server that is down or unresponsive — it is not a performance budget.
+OLLAMA_TIMEOUT = 300
+
+_OLLAMA_WARNED = False  # module-level: warn once per process when the local path is taken
 
 
 def _load_env():
@@ -34,6 +51,10 @@ def available_models() -> list[str]:
             models.append("claude")   # via OpenRouter
         if "gpt4o" not in models:
             models.append("gpt4o")    # via OpenRouter
+    if os.environ.get("OLLAMA_BASE_URL"):
+        # Env-var presence only — we do not ping the server here (a reachability
+        # check is deferred; see TODOS.md). Listed last: local is the fallback tier.
+        models.append("ollama")
     return models or []
 
 
@@ -104,9 +125,54 @@ def _openai_compat_chat(
     )
 
 
+def _ollama_chat(
+    messages: list[dict],
+    base_url: str,
+    model_name: str,
+    max_tokens: int,
+    temperature: float,
+    cached_prefix: str | None,
+) -> tuple[str, str, dict, str]:
+    """Route to a local Ollama server via its OpenAI-compatible endpoint.
+
+    Warns once per process about the context-window caveat: the Speaks agent runs
+    20-50 rounds with a large concatenated prefix and will overflow a short-context
+    local model. Chat and simple queries are fine on smaller models.
+    """
+    global _OLLAMA_WARNED
+    if not _OLLAMA_WARNED:
+        import logging
+        logging.getLogger("echo.llm").warning(
+            "Routing to local Ollama (model=%s). The Echo Speaks agent runs 20-50 "
+            "rounds and concatenates a large schema/rubric prefix — use a long-context "
+            "model (set OLLAMA_MODEL) or it will overflow mid-run. Chat and simple "
+            "queries work well on smaller models.",
+            model_name,
+        )
+        _OLLAMA_WARNED = True
+
+    # Ollama's OpenAI-compatible API lives at {base}/v1. Accept the base with or
+    # without the suffix so OLLAMA_BASE_URL=http://localhost:11434 also works.
+    base = base_url.rstrip("/")
+    if not base.endswith("/v1"):
+        base = base + "/v1"
+
+    return _openai_compat_chat(
+        base_url=base,
+        api_key="ollama",          # Ollama ignores the key, but the SDK requires a non-empty one
+        model_slug=model_name,
+        label=f"ollama:{model_name}",
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        cached_prefix=cached_prefix,
+        timeout=OLLAMA_TIMEOUT,    # finite: avoids an infinite hang on a down server
+    )
+
+
 def chat(
     messages: list[dict],          # [{"role": "user"|"assistant"|"system", "content": str}]
-    model: str = "auto",           # "auto" | "claude" | "gpt4o"
+    model: str = "auto",           # "auto" | "claude" | "gpt4o" | "ollama"
     max_tokens: int = 1024,
     temperature: float = 0.7,
     cached_prefix: str | None = None,  # stable preamble to cache on Anthropic path
@@ -127,9 +193,25 @@ def chat(
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_key    = os.environ.get("OPENAI_API_KEY", "")
     or_key        = os.environ.get("OPENROUTER_API_KEY", "")
+    ollama_base   = os.environ.get("OLLAMA_BASE_URL", "")
+    ollama_model  = os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
 
     want_claude = model in ("claude", "auto")
     want_gpt4o  = model == "gpt4o"
+    want_ollama = model == "ollama"
+
+    # ── Explicit local select ───────────────────────────────────────────
+    # Handle model="ollama" up front so we never silently fall through to a cloud
+    # key the user didn't ask for. If they asked for local but didn't configure it,
+    # that's a clear error, not a surprise cloud bill.
+    if want_ollama:
+        if ollama_base:
+            return _ollama_chat(messages, ollama_base, ollama_model,
+                                 max_tokens, temperature, cached_prefix)
+        raise RuntimeError(
+            "model='ollama' was requested but OLLAMA_BASE_URL is not set in .env "
+            "(e.g. OLLAMA_BASE_URL=http://localhost:11434)"
+        )
 
     # ── Claude path ─────────────────────────────────────────────────────
     if want_claude and anthropic_key:
@@ -195,7 +277,15 @@ def chat(
             cached_prefix=cached_prefix,
         )
 
+    # ── Ollama fallback ─────────────────────────────────────────────────
+    # Last resort for model="auto"/"claude" when NO cloud key is set: a user with
+    # zero API keys still gets local inference instead of a hard error. This is the
+    # "no API key needed" adoption path. Cloud keys, if present, always win above.
+    if ollama_base:
+        return _ollama_chat(messages, ollama_base, ollama_model,
+                            max_tokens, temperature, cached_prefix)
+
     raise RuntimeError(
-        "No LLM API key found. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, "
-        "or OPENROUTER_API_KEY to .env"
+        "No LLM provider configured. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, "
+        "OPENROUTER_API_KEY, or OLLAMA_BASE_URL to .env"
     )

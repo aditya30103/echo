@@ -28,6 +28,8 @@ for each one). For the canonical list and what each is used for, see
 | `OPENAI_API_KEY` | `echo embed`, `echo reflect`, agent fallback |
 | `OPENROUTER_API_KEY` | reflect / embed / agent alternative path |
 | `ANTHROPIC_API_KEY` | Echo Speaks agent (primary; best prompt caching) |
+| `OLLAMA_BASE_URL` | Echo Speaks / chat with **no cloud key** — local fallback (e.g. `http://localhost:11434`) |
+| `OLLAMA_MODEL` | Local model name (default `llama3.1`; use a long-context model for the agent) |
 | `SPOTIFY_CLIENT_ID` + `_SECRET` | `echo enrich-spotify` (optional) |
 | `LASTFM_API_KEY` | `echo enrich-music-meta` (optional; powers mood/genre dimension and cross-modal agent queries) |
 | `SPOTIFY_ZIP` | `echo ingest` — filename of Spotify zip inside `~/.echo/_data/` (defaults to `my_spotify_data.zip`) |

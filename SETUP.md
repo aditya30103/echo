@@ -28,12 +28,18 @@ them later by editing `~/.echo/.env`):
 | Anthropic Claude | Yes, pay-as-you-go | Echo Speaks agent (recommended). |
 | OpenAI | Yes, pay-as-you-go | GPT-4o reflections, embeddings, agent fallback. |
 | OpenRouter | Yes, pay-as-you-go | Alternative path for OpenAI calls. |
+| Ollama (local) | Free, runs on your machine | The agent with **no API key** — set `OLLAMA_BASE_URL`. |
 | YouTube Data API | Yes, free 10K units/day | Video metadata enrichment (title, category, duration). |
 | Spotify Developer | Yes, free | Track metadata enrichment (post-Nov-2024 apps lose audio features). |
 
 You don't need all of them. Echo runs without any keys — you just get a smaller
-pipeline (no enrichment, no reflections, no agent). Start with just YouTube and
-one LLM provider; add the rest later.
+pipeline (no enrichment, no reflections). For the agent with **zero cloud keys**,
+install [Ollama](https://ollama.com), run `ollama pull llama3.1 && ollama serve`,
+and set `OLLAMA_BASE_URL=http://localhost:11434` in `~/.echo/.env`. Echo falls back
+to it automatically when no cloud key is set; pick "ollama" in the UI to force local.
+Use a long-context model — the agent runs 20-50 rounds with a large prompt prefix, so
+a short-context model will overflow mid-run (`llama3.1` has 128k and is the default).
+Start with just YouTube and one LLM provider; add the rest later.
 
 ---
 
