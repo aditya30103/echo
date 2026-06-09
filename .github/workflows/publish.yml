@@ -1,43 +1,43 @@
 name: Publish to PyPI
 
-# Fires on any tag matching v* (e.g. v0.1.0, v0.1.1, v1.0.0).
+# Two ways to run:
+#   1. Push a tag matching v* (e.g. v0.1.0) → builds + publishes to PyPI (production).
+#   2. Actions → "Publish to PyPI" → Run workflow → target=testpypi → rehearses the
+#      whole flow against TestPyPI without touching the real index. Do this first.
 #
-# Bumping a release:
-#   1. Edit pyproject.toml `version = "..."` to the new value.
+# Releasing a version (production):
+#   1. Edit pyproject.toml `version = "..."` and add a CHANGELOG.md entry.
 #   2. git commit -am "release: vX.Y.Z"
-#   3. git tag vX.Y.Z
-#   4. git push origin master && git push origin vX.Y.Z
-#   5. This workflow fires on the tag push, builds the wheel + sdist, and
-#      publishes to PyPI under the project name in pyproject.toml ("echo-archaeology").
+#   3. git tag vX.Y.Z && git push origin master && git push origin vX.Y.Z
+#   4. This workflow fires on the tag, builds the wheel + sdist, verifies the wheel
+#      actually boots, and publishes to PyPI as "echo-archaeology".
 #
-# One-time PyPI setup (do this once, before the first tag push):
-#
-#   a) Reserve the project name on PyPI. Two options:
-#      (i)  Manual: create the project at https://pypi.org/manage/account/publishing/
-#           by adding a "Pending publisher" for: owner=aditya30103, repo=echo,
-#           workflow=publish.yml, environment=pypi.
-#      (ii) Or do a one-time manual upload first (`python -m build && twine upload dist/*`)
-#           to claim the name, then configure trusted publishing afterwards.
-#
-#   b) Create a GitHub "Environment" named `pypi` for this repo (Settings ->
-#      Environments -> New environment). Optionally add required reviewers /
-#      branch protection there for human approval before each publish.
-#
-# After (a) + (b) are done, this workflow needs no secrets and no PyPI tokens.
-# Trusted publishing uses OIDC to authenticate the workflow run to PyPI.
+# One-time setup (see RELEASING.md for the click-by-click version):
+#   a) PyPI: add a "Pending publisher" (Trusted Publishing) for owner=aditya30103,
+#      repo=echo, workflow=publish.yml, environment=pypi. Same on test.pypi.org with
+#      environment=testpypi for the rehearsal.
+#   b) GitHub: create two Environments named `pypi` and `testpypi` (Settings →
+#      Environments). Optionally require a reviewer on `pypi` for a human gate.
+# After (a)+(b), no secrets/tokens are needed — OIDC trusted publishing authenticates.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Publish target'
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
 
 permissions:
   contents: read
-  id-token: write   # Required for OIDC trusted publishing
 
 jobs:
   build:
-    name: Build wheel + sdist
+    name: Build wheel + sdist (and verify the wheel boots)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -71,6 +71,27 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build
 
+      - name: Verify the wheel boots before we publish it
+        # Install the freshly built wheel into a clean venv and boot it from OUTSIDE
+        # the repo — the pip-install user's view. A wheel that builds but can't import
+        # (the api/-outside-package class of bug) must NEVER reach the index. This is
+        # the same check smoke.yml runs per-PR, repeated here as the last gate before
+        # an irreversible publish.
+        run: |
+          python -m venv "$RUNNER_TEMP/pubcheck"
+          "$RUNNER_TEMP/pubcheck/bin/pip" install --upgrade pip
+          "$RUNNER_TEMP/pubcheck/bin/pip" install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/pubcheck/bin/echo" --help
+          "$RUNNER_TEMP/pubcheck/bin/python" - <<'PY'
+          import echo.api.main as m
+          paths = {getattr(r, "path", None) for r in m.app.routes}
+          assert "/api/health" in paths, "health route missing from built wheel"
+          from importlib.resources import files
+          assert (files("echo") / "ui" / "dist" / "index.html").is_file(), "ui bundle missing from wheel"
+          print("WHEEL_BOOT_OK")
+          PY
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -78,14 +99,15 @@ jobs:
           path: dist/
 
   publish:
-    name: Publish to PyPI via trusted publishing
+    name: Publish via trusted publishing
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: pypi
-      url: https://pypi.org/p/echo-archaeology
+      # workflow_dispatch+testpypi → testpypi env; everything else (tag push,
+      # or dispatch with target=pypi) → pypi env.
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi') && 'testpypi' || 'pypi' }}
     permissions:
-      id-token: write
+      id-token: write   # Required for OIDC trusted publishing
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -93,5 +115,12 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish
+      - name: Publish to TestPyPI (rehearsal)
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Publish to PyPI (production)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
         uses: pypa/gh-action-pypi-publish@release/v1

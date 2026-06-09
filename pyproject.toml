@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "echo-archaeology"
 version = "0.1.0"
 description = "Personal data archaeology — analyze your own YouTube + Spotify + Calendar history locally with an autonomous AI agent."
+readme = "README.md"   # rendered as the PyPI project-page long description (text/markdown)
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Aditya Arya" }]
@@ -62,7 +63,9 @@ dev = [
 echo = "echo.cli.main:app"
 
 [project.urls]
-# Homepage / Source not yet set — repo is local-only until V2 publishes to PyPI.
+Homepage = "https://github.com/aditya30103/echo"
+Repository = "https://github.com/aditya30103/echo"
+Issues = "https://github.com/aditya30103/echo/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/echo"]

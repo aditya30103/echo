@@ -104,7 +104,8 @@ Quick-start guide (AI-friendly): [INSTALL.md](./INSTALL.md). Full walkthrough: [
 | Spotify Phase 2 (enrich_spotify track metadata) | ⏳ quota-blocked; works when unblocked |
 | Spotify Phase 3b (embed_spotify_tracks → LanceDB) | ⏳ blocked by Phase 2 |
 | Packaged CLI (`echo` command, `pip install -e .`) | ✅ shipped (this branch) |
-| PyPI release (`pip install echo-archaeology`) | 🔜 V2 |
+| Local Ollama provider (run the agent with no cloud key) | ✅ shipped |
+| PyPI release (`pip install echo-archaeology`) | 🔜 publish-ready — see [RELEASING.md](./RELEASING.md) |
 
 See [TODOS.md](./TODOS.md) for the deferred-work list with context.
 
