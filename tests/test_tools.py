@@ -88,7 +88,12 @@ def test_clustering_happy_path(tmp_path, monkeypatch):
 
     result = clustering_tool.run_clustering(table="videos", n_clusters=3)
     assert result.startswith("[RAW-COMPUTED]")
-    data = json.loads(result[len("[RAW-COMPUTED] "):])
+    # Surface a tool-level error directly instead of letting it fall through to a
+    # cryptic JSONDecodeError. Both the success and error returns start with the
+    # [RAW-COMPUTED] tag (success uses a newline, errors a space + "ERROR:"), so a
+    # blind slice+json.loads masked a real failure (e.g. a missing lance backend).
+    assert "ERROR" not in result, f"run_clustering errored: {result}"
+    data = json.loads(result[len("[RAW-COMPUTED]"):].strip())
     assert "silhouette_score" in data
     assert "clusters" in data
     assert len(data["clusters"]) == 3

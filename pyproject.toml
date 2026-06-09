@@ -40,8 +40,14 @@ dependencies = [
   "icalendar>=5.0.0",
   "duckduckgo-search>=6.0.0",
   "pylast>=5.0",  # Last.fm SDK for enrich_music_meta (mood/genre tags)
-  # Vector store + embeddings
+  # Vector store + embeddings.
+  # pylance (imports as `lance`) is lancedb's storage backend. lancedb >= 0.33
+  # no longer bundles it, and table reads (`tbl.to_pandas()` in clustering /
+  # vector_search / embed) raise "lance library is required" without it. Older
+  # lancedb (<=0.30) bundled it, which is why a fresh CI install broke while
+  # cached dev envs passed. Declare it explicitly so every install gets a backend.
   "lancedb>=0.30.0",
+  "pylance>=0.16.0",
   # LLM providers
   "openai>=1.30.0",
   "anthropic>=0.40.0",
