@@ -259,3 +259,49 @@ def test_dispatch_passes_session_state():
     # run_sql is always available in phase 1; this just checks the call signature
     result = dispatch("run_sql", {"query": "SELECT 1"}, phase=1, session_state=state)
     assert result  # any non-exception result is fine
+
+
+# ── Phase-1 narrative blindness (the reflections block) ───────────────────────
+# CLAUDE.md gotcha: Agent Phase 1 (rounds 1-10) blocks the reflections lancedb
+# table in BOTH vector_search dispatch AND run_sql. This is intentional — Phase 1
+# hypotheses must form from raw behavioral data only, never LLM-generated narrative.
+# These guard that the block fires in Phase 1 and lifts in Phase 2, and crucially
+# that the underlying tool is NOT even called when blocked.
+
+def test_phase1_blocks_vector_search_reflections_without_calling_tool(monkeypatch):
+    import echo.api.tools as tools
+    called = {"n": 0}
+    monkeypatch.setattr(tools, "vector_search", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or "REAL")
+    result = tools.dispatch("vector_search", {"table": "reflections", "query": "x"}, phase=1)
+    assert "BLOCKED" in result and "NARRATIVE" in result
+    assert called["n"] == 0, "the real vector_search must not run when blocked in Phase 1"
+
+
+def test_phase1_blocks_run_sql_touching_reflections_without_calling_tool(monkeypatch):
+    import echo.api.tools as tools
+    called = {"n": 0}
+    monkeypatch.setattr(tools, "run_sql", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or "REAL")
+    result = tools.dispatch("run_sql", {"query": "SELECT reflection FROM reflections LIMIT 1"}, phase=1)
+    assert "BLOCKED" in result
+    assert called["n"] == 0, "the real run_sql must not run when reflections is touched in Phase 1"
+
+
+def test_phase1_allows_vector_search_on_raw_tables(monkeypatch):
+    """The block is narrow: only the reflections table. Raw tables pass through."""
+    import echo.api.tools as tools
+    monkeypatch.setattr(tools, "vector_search", lambda *a, **k: "[SEMANTIC-RAW] passthrough")
+    result = tools.dispatch("vector_search", {"table": "videos", "query": "x"}, phase=1)
+    assert "BLOCKED" not in result
+    assert "passthrough" in result
+
+
+def test_phase2_lifts_reflections_block(monkeypatch):
+    """In Phase 2 the same calls pass through to the real tools — block is gone."""
+    import echo.api.tools as tools
+    monkeypatch.setattr(tools, "vector_search", lambda *a, **k: "[NARRATIVE] reflections result")
+    monkeypatch.setattr(tools, "run_sql", lambda *a, **k: "[RAW-SQL] reflections rows")
+
+    vs = tools.dispatch("vector_search", {"table": "reflections", "query": "x"}, phase=2)
+    sql = tools.dispatch("run_sql", {"query": "SELECT reflection FROM reflections"}, phase=2)
+    assert "BLOCKED" not in vs and "reflections result" in vs
+    assert "BLOCKED" not in sql and "reflections rows" in sql
