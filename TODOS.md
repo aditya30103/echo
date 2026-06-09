@@ -13,10 +13,15 @@ pipeline step that runs that step against the fixture and asserts row counts
 in the resulting tables. Plus `typer.testing.CliRunner` tests for the CLI
 init wizard (via piped input or via the extracted `run_wizard` function).
 
-**Why:** Current pytest passes 105 tests but only `test_pelt_happy_path` /
-`test_clustering_happy_path` actually exercise the pipeline against real data.
-The right shape for a public OSS project is per-step integration tests with a
-deterministic fixture that ships in the repo without leaking personal data.
+**Why:** [CORRECTED 2026-06-09] The integration harness already exists —
+`tests/test_pipeline_integration.py` has 6 real per-step tests (ingest/signals/detect
++ idempotency) against synthetic fixtures in `tests/fixtures.py`, and the suite is at
+185 passing. The earlier claim that "only test_pelt/test_clustering exercise the
+pipeline" was false. Remaining gaps (this is the real work): `reflect.py` has zero
+tests; the `_react_loop` happy path (parse ACTION → dispatch → finish-with-findings)
+is untested (only control-flow is, at test_speak_response.py:105-168); enrich/embed
+lack API-mocked integration; no CI gate; no `conftest.py` (fixtures live in a plain
+module and should be promoted).
 
 **Approach:**
 1. Build a synthetic Takeout zip: tiny JSON files mimicking the Google export
@@ -143,6 +148,22 @@ LLM-as-judge pass: submit `(claim + evidence + source_tag)` to GPT-4o, compare
 to human score, flag systematic biases by source_tag.
 
 **Blocked by:** Needs 20+ human-annotated sessions.
+
+---
+
+## TODO: Ollama reachability ping in available_models()
+
+**What:** `available_models()` currently reports `ollama` whenever `OLLAMA_BASE_URL`
+is set (env-var check, consistent with the other providers). Add a `/api/tags` ping
+with a short timeout so `ollama` is only offered when the server is actually reachable.
+
+**Why:** Without it, a user with `OLLAMA_BASE_URL` set but the server down sees `ollama`
+in the model picker, selects it, and the call fails. The explicit-timeout fix (shipped
+with Ollama routing) turns the hang into a clean error, so this is a UX nicety, not a
+correctness issue.
+
+**Trigger:** If the dead-server picker UX actually bites in practice. Depends on the
+Ollama routing work (DeepSeek/Ollama TODO above) landing first.
 
 ---
 
