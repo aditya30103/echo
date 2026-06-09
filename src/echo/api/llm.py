@@ -56,6 +56,54 @@ def _inject_prefix(messages: list[dict], cached_prefix: str) -> list[dict]:
     return result
 
 
+def _openai_compat_chat(
+    *,
+    base_url: str | None,   # None → OpenAI's default endpoint
+    api_key: str,
+    model_slug: str,
+    label: str,             # human-readable model label returned to callers
+    messages: list[dict],
+    max_tokens: int,
+    temperature: float,
+    cached_prefix: str | None,
+    timeout: float = 60,
+) -> tuple[str, str, dict, str]:
+    """Shared OpenAI-compatible chat call — OpenRouter, OpenAI direct, and Ollama.
+
+    These three providers differ only in base_url, api_key, model slug, and the
+    label they report; the request/response handling is identical. The Anthropic
+    native path is deliberately NOT routed here — it uses two-block prefix caching
+    and a streaming context manager that this shared path doesn't model.
+
+    `timeout` is mandatory and has no "off" value on purpose: a local Ollama server
+    that is configured (OLLAMA_BASE_URL set) but not running would otherwise hang
+    the request forever with no error. A finite timeout turns that into a clean
+    failure the caller can surface.
+    """
+    import openai
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
+    msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
+    resp = client.chat.completions.create(
+        model=model_slug,
+        messages=msgs,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+    )
+    usage = {
+        "input_tokens":                resp.usage.prompt_tokens,
+        "output_tokens":               resp.usage.completion_tokens,
+        "cache_read_input_tokens":     0,
+        "cache_creation_input_tokens": 0,
+    }
+    return (
+        resp.choices[0].message.content.strip(),
+        label,
+        usage,
+        str(resp.choices[0].finish_reason or "unknown"),
+    )
+
+
 def chat(
     messages: list[dict],          # [{"role": "user"|"assistant"|"system", "content": str}]
     model: str = "auto",           # "auto" | "claude" | "gpt4o"
@@ -122,51 +170,30 @@ def chat(
 
     # ── Claude via OpenRouter ────────────────────────────────────────────
     if want_claude and or_key and not want_gpt4o:
-        import openai
-        client = openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1")
-        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
-        resp = client.chat.completions.create(
-            model=f"anthropic/{CLAUDE_MODEL}",
-            messages=msgs,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=60,
+        return _openai_compat_chat(
+            base_url="https://openrouter.ai/api/v1", api_key=or_key,
+            model_slug=f"anthropic/{CLAUDE_MODEL}", label="claude-sonnet-4-6 (OpenRouter)",
+            messages=messages, max_tokens=max_tokens, temperature=temperature,
+            cached_prefix=cached_prefix,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
-                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
-        return resp.choices[0].message.content.strip(), "claude-sonnet-4-6 (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o direct ───────────────────────────────────────────────────
     if openai_key:
-        import openai
-        client = openai.OpenAI(api_key=openai_key)
-        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
-        resp = client.chat.completions.create(
-            model=GPT4O_DIRECT,
-            messages=msgs,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=60,
+        return _openai_compat_chat(
+            base_url=None, api_key=openai_key,
+            model_slug=GPT4O_DIRECT, label="gpt-4o",
+            messages=messages, max_tokens=max_tokens, temperature=temperature,
+            cached_prefix=cached_prefix,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
-                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
-        return resp.choices[0].message.content.strip(), "gpt-4o", usage, str(resp.choices[0].finish_reason or "unknown")
 
     # ── GPT-4o via OpenRouter ────────────────────────────────────────────
     if or_key:
-        import openai
-        client = openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1")
-        msgs = _inject_prefix(messages, cached_prefix) if cached_prefix else messages
-        resp = client.chat.completions.create(
-            model=GPT4O_MODEL,
-            messages=msgs,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=60,
+        return _openai_compat_chat(
+            base_url="https://openrouter.ai/api/v1", api_key=or_key,
+            model_slug=GPT4O_MODEL, label="gpt-4o (OpenRouter)",
+            messages=messages, max_tokens=max_tokens, temperature=temperature,
+            cached_prefix=cached_prefix,
         )
-        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens,
-                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
-        return resp.choices[0].message.content.strip(), "gpt-4o (OpenRouter)", usage, str(resp.choices[0].finish_reason or "unknown")
 
     raise RuntimeError(
         "No LLM API key found. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, "
