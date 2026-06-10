@@ -20,15 +20,15 @@
 ## 2. Install
 
 ```bash
-git clone https://github.com/<you>/echo.git
-cd echo
-pip install -e .
+pip install echo-archaeology
 ```
 
-Or, once on PyPI (coming soon):
+Or from source (for development):
 
 ```bash
-pip install echo-archaeology
+git clone https://github.com/aditya30103/echo.git
+cd echo
+pip install -e .
 ```
 
 ---

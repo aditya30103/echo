@@ -119,10 +119,11 @@ echo/                             # The repo
 │       ├── config.py             # EchoConfig dataclass + TOML/.env loader
 │       ├── data/
 │       │   └── paths.py          # ~/.echo/ resolution (honors $ECHO_DATA_DIR)
-│       ├── pipeline/             # The 7 pipeline steps (run(config) each)
+│       ├── pipeline/             # The 8 pipeline steps (run(config) each)
 │       │   ├── ingest.py
 │       │   ├── enrich.py
 │       │   ├── enrich_spotify.py
+│       │   ├── enrich_music_meta.py
 │       │   ├── detect.py
 │       │   ├── signals.py
 │       │   ├── reflect.py
@@ -133,29 +134,29 @@ echo/                             # The repo
 │       │   ├── migrate.py        # echo migrate-data
 │       │   ├── serve.py          # echo serve (FastAPI + static UI)
 │       │   └── view_reflections.py  # echo view-reflections
+│       ├── api/                  # FastAPI backend — INSIDE the package (moved
+│       │   │                     #  2026-06-09) so `echo serve` survives pip install
+│       │   ├── main.py           # app + CORS + router mount (echo.api.main:app)
+│       │   ├── db.py             # sqlite_utils singleton
+│       │   ├── vec.py            # LanceDB + embed_query
+│       │   ├── llm.py            # Anthropic native → OpenAI/OpenRouter → Ollama
+│       │   ├── observability.py  # Langfuse tracing wrapper (noop if no keys)
+│       │   ├── routers/
+│       │   │   ├── speak.py      # Echo Speaks ReAct loop (narrative-blind Phase 1)
+│       │   │   ├── chat.py       # Ask Echo RAG demo
+│       │   │   ├── insights.py   # Binge sessions + agency map
+│       │   │   └── timeline.py   # Year/month/week aggregates
+│       │   └── tools/            # The 7-tool agent toolkit
+│       │       ├── sql_tool.py           # run_sql (SELECT-only)
+│       │       ├── python_tool.py        # execute_python (subprocess sandbox)
+│       │       ├── pelt_tool.py          # run_pelt (changepoint)
+│       │       ├── clustering_tool.py    # run_clustering (k-means on lancedb)
+│       │       ├── search_tool.py        # vector_search (lancedb cosine)
+│       │       ├── youtube_tool.py       # youtube_lookup (quota-aware)
+│       │       ├── web_search_tool.py    # web_search (5/session, DDG)
+│       │       └── compressors.py        # Per-tag observation compression (Layer 1)
 │       └── ui/
-│           └── dist/             # Pre-built SvelteKit bundle (populated
-│                                 #  by `cd ui && npm run build`)
-├── api/                          # FastAPI backend (NOT in the package)
-│   ├── main.py                   # app + CORS + router mount
-│   ├── db.py                     # sqlite_utils singleton
-│   ├── vec.py                    # LanceDB + embed_query
-│   ├── llm.py                    # Anthropic native + OpenAI/OpenRouter routing
-│   ├── observability.py          # Langfuse tracing wrapper (noop if no keys)
-│   ├── routers/
-│   │   ├── speak.py              # Echo Speaks ReAct loop (20 rounds, narrative-blind Phase 1)
-│   │   ├── chat.py               # Ask Echo RAG demo
-│   │   ├── insights.py           # Binge sessions + agency map
-│   │   └── timeline.py           # Year/month/week aggregates
-│   └── tools/                    # The 7-tool agent toolkit
-│       ├── sql_tool.py           # run_sql (SELECT-only)
-│       ├── python_tool.py        # execute_python (sandboxed via subprocess)
-│       ├── pelt_tool.py          # run_pelt (changepoint on arbitrary table)
-│       ├── clustering_tool.py    # run_clustering (k-means on lancedb)
-│       ├── search_tool.py        # vector_search (lancedb cosine)
-│       ├── youtube_tool.py       # youtube_lookup (quota-aware)
-│       ├── web_search_tool.py    # web_search (5 calls/session, DDG)
-│       └── compressors.py        # Per-tag observation compression (Layer 1)
+│           └── dist/             # Pre-built SvelteKit bundle (shipped in the wheel)
 ├── ui/                           # SvelteKit frontend (separately built)
 │   ├── src/
 │   │   ├── routes/+page.svelte   # The Echo Speaks landing
@@ -165,32 +166,36 @@ echo/                             # The repo
 │   │       ├── RoundPillStrip.svelte
 │   │       └── TimelineCard.svelte
 │   └── svelte.config.js
-├── tests/                        # pytest suite
-│   ├── conftest.py               # sets ECHO_DATA_DIR=repo_root for legacy integration tests
-│   ├── test_compressors.py       # 40 unit tests for the Layer 1 compression registry
-│   ├── test_trim_history_integration.py
-│   ├── test_speak_response.py    # exception path + natural completion guards
-│   ├── test_prompt_caching.py    # cache_control + streaming wiring
+├── tests/                        # pytest suite (204 tests; run via `pytest`)
+│   ├── fixtures.py               # synthetic Takeout zip builders for integration tests
+│   ├── test_pipeline_integration.py  # ingest → signals → detect against fixtures
+│   ├── test_packaged_imports.py  # guards echo.api.main imports from a foreign cwd
+│   ├── test_compressors.py       # Layer 1 compression registry
+│   ├── test_speak_response.py    # ReAct loop: happy path, exception, round-limit, bad ACTION
+│   ├── test_reflect.py           # reflect.py plumbing (mocked LLM)
 │   └── ...
 └── (root configs)
+    ├── .github/workflows/        # smoke.yml (tests + wheel-smoke), publish.yml (PyPI)
     ├── Dockerfile / ui/Dockerfile / docker-compose.yml
     ├── .env.example              # canonical list of env vars
     ├── annotations.example.yaml  # template for private/annotations.yaml
     ├── metadata.yaml             # Datasette canned queries
-    ├── requirements.txt          # legacy (pyproject.toml is the source of truth)
+    ├── RELEASING.md / CHANGELOG.md   # release process + notes
     └── README / SETUP / DATA / RUNBOOK / TODOS / CLAUDE / AGENTS / LICENSE
 ```
 
-The split between `src/echo/` and `api/`:
+Everything installable lives under `src/echo/`:
 
-- `src/echo/` is the **installable** package. `pip install -e .` puts the
-  `echo` CLI on PATH and makes `from echo.config import ...` resolvable
-  everywhere. The pipeline scripts live here so `echo run` works from
-  anywhere on disk, not just inside a clone.
-- `api/` is the **FastAPI server** for the SvelteKit UI. It's not in the
-  package because it's invoked as `uvicorn api.main:app` (or by `echo serve`,
-  which imports it). It depends on `echo.config` and `echo.data.paths` for
-  data location, but otherwise stands alone.
+- `src/echo/` is the **installable** package. `pip install` (or `-e .`) puts the
+  `echo` CLI on PATH and makes `from echo.config import ...` resolvable everywhere.
+  The pipeline scripts live here so `echo run` works from anywhere on disk, not
+  just inside a clone.
+- `src/echo/api/` is the **FastAPI server** for the SvelteKit UI. It lives INSIDE
+  the package (moved there 2026-06-09), so `echo serve` — which imports
+  `echo.api.main:app` — works after a plain `pip install`, not only when launched
+  from a repo clone. (Earlier it lived at the repo root as `api/` and ImportError'd
+  on clean installs; see CHANGELOG 0.1.0.) It depends on `echo.config` and
+  `echo.data.paths` for data location.
 
 ---
 
@@ -286,7 +291,7 @@ The local-only constraint shapes several decisions:
   cache write at the Phase 1→2 boundary when the tool list expands. Reduces
   per-round cost ~10x once warm.
 - **Layer 1 observation compression.** Older rounds get per-tool structured
-  compression (`api/tools/compressors.py`) so the agent's context stays focused
+  compression (`src/echo/api/tools/compressors.py`) so the agent's context stays focused
   on recent rounds + compact summaries of earlier work. Real-world: a
   1892-char SQL observation compresses to ~165 chars (11x).
 - **Per-finding evals.** ✓ Correct / ~ Partial / ✗ Wrong buttons on each

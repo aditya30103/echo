@@ -58,13 +58,22 @@ and can be added later — just re-run the relevant pipeline step.
 ## Quick start
 
 ```bash
-git clone https://github.com/aditya30103/echo.git
-cd echo
-pip install -e .
+pip install echo-archaeology
 
 echo init      # 5-section interactive wizard; writes ~/.echo/config.toml + .env
 echo run       # ingest -> enrich -> detect -> signals -> reflect -> embed
 echo serve     # open http://localhost:8000  (or: docker compose up)
+```
+
+No cloud API key? Install [Ollama](https://ollama.com), run `ollama pull llama3.1 &&
+ollama serve`, set `OLLAMA_BASE_URL=http://localhost:11434` in `~/.echo/.env`, and the
+agent runs fully local.
+
+**From source** (for development):
+
+```bash
+git clone https://github.com/aditya30103/echo.git
+cd echo && pip install -e .
 ```
 
 Quick-start guide (AI-friendly): [INSTALL.md](./INSTALL.md). Full walkthrough: [SETUP.md](./SETUP.md).
@@ -103,9 +112,10 @@ Quick-start guide (AI-friendly): [INSTALL.md](./INSTALL.md). Full walkthrough: [
 | Spotify Phase 1 (ingest) + Phase 3 (signals) | ✅ shipped |
 | Spotify Phase 2 (enrich_spotify track metadata) | ⏳ quota-blocked; works when unblocked |
 | Spotify Phase 3b (embed_spotify_tracks → LanceDB) | ⏳ blocked by Phase 2 |
-| Packaged CLI (`echo` command, `pip install -e .`) | ✅ shipped (this branch) |
+| Packaged CLI (`echo` command) | ✅ shipped |
 | Local Ollama provider (run the agent with no cloud key) | ✅ shipped |
-| PyPI release (`pip install echo-archaeology`) | 🔜 publish-ready — see [RELEASING.md](./RELEASING.md) |
+| PyPI release (`pip install echo-archaeology`) | ✅ shipped — release process in [RELEASING.md](./RELEASING.md) |
+| CI (tests + wheel-smoke on every PR) | ✅ shipped |
 
 See [TODOS.md](./TODOS.md) for the deferred-work list with context.
 

@@ -229,7 +229,7 @@ Run both servers concurrently (two terminals):
 
 ```bash
 # Terminal 1 — FastAPI backend (port 8000)
-python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn echo.api.main:app --reload --host 127.0.0.1 --port 8000
 
 # Terminal 2 — SvelteKit dev server (port 5173)
 cd ui && npm run dev

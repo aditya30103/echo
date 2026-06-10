@@ -55,7 +55,7 @@ works on a clean machine with no existing `.env` or `~/.echo/`.
 
 ## TODO: Echo Speaks context mgmt — Layers 2 & 3
 
-**What:** Layer 1 (per-tool structured compression via `api/tools/compressors.py`)
+**What:** Layer 1 (per-tool structured compression via `src/echo/api/tools/compressors.py`)
 shipped 2026-05-15. Layer 2 (heuristic finding scratchpad) and Layer 3 (Haiku
 summarization for runs > 25 rounds) remain deferred.
 
@@ -104,13 +104,15 @@ become a hot path in agent traces.
 
 ---
 
-## TODO: DeepSeek / Ollama routing in api/llm.py
+## TODO: DeepSeek routing in src/echo/api/llm.py
 
-**What:** Add DeepSeek (cloud) or Ollama (local) slug to `api/llm.py` via
-`OPENROUTER_BASE_URL` or a new `OLLAMA_BASE_URL`. Same interface as OpenRouter path.
+**What:** Add a DeepSeek (cloud) slug to `src/echo/api/llm.py` via `OPENROUTER_BASE_URL`
+or a direct key. Same shape as the existing `_openai_compat_chat()` callers.
 
-**Why:** Cheap local inference for development and offline use.
-**Cons:** Quality gap on multi-step ReAct loops. Low urgency.
+**Why:** Cheap cloud inference as an alternative provider.
+**Note:** The **Ollama** half of this item shipped 2026-06-09 (`OLLAMA_BASE_URL`,
+last-fallback routing, `model="ollama"`, `OLLAMA_MODEL`, finite timeout). Only the
+DeepSeek slug remains, and it's low urgency.
 
 ---
 
@@ -171,6 +173,7 @@ Ollama routing work (DeepSeek/Ollama TODO above) landing first.
 
 | Session | What shipped |
 |---|---|
+| 2026-06-09 | Hardening + PyPI week — `api/` moved into `src/echo/api/` (fixed `echo serve` ImportError on clean install); local Ollama provider; CI wheel-smoke job (+ fixed force-include build break); `pylance` dep added (lancedb 0.33 backend split); tests for agent loop / phase-1 block / reflect.py; PyPI publish wired + boot-gated + TestPyPI rehearsal (RELEASING.md, CHANGELOG.md); docs sync. 204 tests green |
 | 2026-05-19 | Spotify/YouTube agent parity — spotify_tracks in search tool, speak rubric/schema/Phase 1, chat retrieval; fix llm_chat unpack bug in Ask Echo; CI ANSI test fix |
 | 2026-05-19 | OSS release prep — BLOCKING personal strings removed, /docs/ move, INSTALL.md, onboarding clarity, .gitignore audit, CLAUDE.md/TODOS.md cleanup |
 | 2026-05-17 | SvelteKit adapter-static build — dist/ committed to git; echo serve serves full UI |

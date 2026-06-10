@@ -69,22 +69,29 @@ Echo can ingest Spotify in addition to YouTube for cross-modal queries
 
 ---
 
-## 3. Clone + install
+## 3. Install
+
+The quick way (just use it):
 
 ```bash
-git clone https://github.com/<your-fork>/echo.git
-cd echo
-
 python -m venv .venv
 .venv\Scripts\activate            # Windows (PowerShell)
 # source .venv/bin/activate       # macOS / Linux
 
+pip install echo-archaeology
+```
+
+Or from source (for development / to edit the code):
+
+```bash
+git clone https://github.com/aditya30103/echo.git
+cd echo
+python -m venv .venv && .venv\Scripts\activate
 pip install -e .
 ```
 
-`pip install -e .` installs the `echo-archaeology` package in editable mode —
-the `echo` CLI is now on your PATH (or invokable as `python -m echo.cli.main`
-if your venv's Scripts dir isn't on PATH).
+Either way the `echo` CLI is now on your PATH (or invokable as
+`python -m echo.cli.main` if your venv's Scripts dir isn't on PATH).
 
 **Verify:**
 ```bash
