@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Echo — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:               #0c0906;
+    --surface-0:        #140f0a;
+    --surface-1:        #1e1610;
+    --surface-2:        #261c12;
+    --border:           #2a1f15;
+    --border-bright:    #3a2a1a;
+    --text-muted:       #8a6a50;
+    --text-secondary:   #a89070;
+    --text-primary:     #e8d5b0;
+    --text-bright:      #f5ead0;
+    --accent:           #c2820a;
+    --accent-dim:       #7a5008;
+    --accent-glow:      #e8a020;
+    --signal-cold:      #7a9aaa;
+    --signal-cold-dim:  #3a5a6a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: 'Geist Mono', monospace;
+    color: var(--text-primary);
+    width: 1600px;
+    height: 900px;
+    padding: 50px 64px 40px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Header ---------- */
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  h1 {
+    font-family: 'Lora', serif;
+    font-size: 5.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--accent), var(--accent-glow));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+  }
+  .subtitle {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 1.7rem;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+  }
+  .super {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--signal-cold);
+  }
+  .super .sep {
+    color: var(--signal-cold-dim);
+    margin: 0 14px;
+  }
+
+  /* ---------- Main flow ---------- */
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr 70px 1fr 70px 1fr;
+    gap: 0;
+    flex: 1;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  /* arrows */
+  .arrow-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  .arrow-col .arrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 2.6rem;
+    line-height: 1;
+    color: var(--signal-cold);
+    font-weight: 400;
+  }
+  .arrow-col .verb {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--signal-cold);
+    padding: 4px 9px;
+    border: 1px solid var(--signal-cold-dim);
+    border-radius: 4px;
+    background: var(--bg);
+  }
+
+  /* stage cards */
+  .stage {
+    background: var(--surface-0);
+    border: 1px solid var(--border-bright);
+    border-radius: 14px;
+    padding: 32px 34px 30px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .stage.warm { border-color: var(--accent-dim); }
+  .stage.cold { border-color: var(--signal-cold-dim); }
+
+  /* huge stage number as background motif */
+  .stage .big-num {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    font-family: 'Lora', serif;
+    font-weight: 700;
+    font-size: 9rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--surface-1);
+    user-select: none;
+    pointer-events: none;
+  }
+  .stage.warm .big-num { color: rgba(194, 130, 10, 0.07); }
+  .stage.cold .big-num { color: rgba(122, 154, 170, 0.08); }
+
+  .stage .eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+  }
+  .stage.warm .eyebrow { color: var(--accent); }
+  .stage.cold .eyebrow { color: var(--signal-cold); }
+  .stage .eyebrow .num {
+    color: var(--text-bright);
+    font-weight: 600;
+  }
+  .stage .eyebrow .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .stage.warm .eyebrow .dot { background: var(--accent); }
+  .stage.cold .eyebrow .dot { background: var(--signal-cold); }
+
+  .stage .title {
+    font-family: 'Lora', serif;
+    font-weight: 700;
+    font-size: 2.6rem;
+    line-height: 1.1;
+    color: var(--text-bright);
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+    position: relative;
+    z-index: 1;
+  }
+  .stage .tagline {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 1.15rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    margin-bottom: 22px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .stage ul {
+    list-style: none;
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+  }
+  .stage li {
+    font-family: 'Geist Mono', monospace;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: var(--text-primary);
+    padding: 8px 0;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .stage li:first-child { border-top: 1px solid var(--border-bright); padding-top: 12px; }
+  .stage li .marker {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    width: 64px;
+  }
+  .stage.warm li .marker { color: var(--accent); }
+  .stage.cold li .marker { color: var(--signal-cold); }
+  .stage li .txt {
+    flex: 1;
+    color: var(--text-primary);
+  }
+  .stage li .txt em {
+    color: var(--text-muted);
+    font-style: normal;
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+
+  /* ---------- Footer ---------- */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 30px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+  }
+  .legend {
+    display: flex;
+    gap: 30px;
+    align-items: center;
+  }
+  .leg {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+  }
+  .swatch {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+  }
+  .swatch.warm { background: var(--accent); }
+  .swatch.cold { background: var(--signal-cold); }
+  .leg em {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    color: var(--text-primary);
+    font-size: 1.05rem;
+    margin-right: 4px;
+  }
+  .badges {
+    display: flex;
+    gap: 12px;
+  }
+  .badge {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-bright);
+    border: 1px solid var(--border-bright);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .badge .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .badge.cold .dot { background: var(--signal-cold); }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Echo</h1>
+    <div class="subtitle">Your past, heard back.</div>
+    <div class="super">Architecture<span class="sep">·</span>Memory reconstructed by robotic agency</div>
+  </div>
+
+  <div class="flow">
+
+    <!-- Stage 01 — WARM -->
+    <div class="stage warm">
+      <div class="big-num">01</div>
+      <div class="eyebrow"><span class="dot"></span><span class="num">01</span>&nbsp;·&nbsp;Inputs</div>
+      <div class="title">Your digital past</div>
+      <div class="tagline">Six years of watching, searching, listening — exported from the platforms that recorded it.</div>
+      <ul>
+        <li>
+          <span class="marker">Required</span>
+          <span class="txt">Google Takeout <em>YouTube · Search · Calendar</em></span>
+        </li>
+        <li>
+          <span class="marker">Required</span>
+          <span class="txt">Spotify Export <em>extended streaming history</em></span>
+        </li>
+        <li>
+          <span class="marker">Optional</span>
+          <span class="txt">YouTube Data API <em>video metadata</em></span>
+        </li>
+        <li>
+          <span class="marker">Optional</span>
+          <span class="txt">Last.fm + Spotify Web <em>tags · duration</em></span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Arrow -->
+    <div class="arrow-col">
+      <div class="arrow">→</div>
+      <div class="verb">Ingest</div>
+    </div>
+
+    <!-- Stage 02 — COLD -->
+    <div class="stage cold">
+      <div class="big-num">02</div>
+      <div class="eyebrow"><span class="dot"></span><span class="num">02</span>&nbsp;·&nbsp;Engine</div>
+      <div class="title">The local engine</div>
+      <div class="tagline">Eight idempotent steps. Two stores. Nothing leaves your machine — ever.</div>
+      <ul>
+        <li>
+          <span class="marker">Pipeline</span>
+          <span class="txt">ingest → enrich → detect → signals → reflect → embed</span>
+        </li>
+        <li>
+          <span class="marker">echo.db</span>
+          <span class="txt">SQLite <em>8 tables · the source of truth</em></span>
+        </li>
+        <li>
+          <span class="marker">lancedb/</span>
+          <span class="txt">5 vector tables <em>semantic recall · 1536-dim</em></span>
+        </li>
+        <li>
+          <span class="marker">Method</span>
+          <span class="txt">PELT changepoints → behavioral chapters</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Arrow -->
+    <div class="arrow-col">
+      <div class="arrow">→</div>
+      <div class="verb">Serve</div>
+    </div>
+
+    <!-- Stage 03 — COLD (agent) -->
+    <div class="stage cold">
+      <div class="big-num">03</div>
+      <div class="eyebrow"><span class="dot"></span><span class="num">03</span>&nbsp;·&nbsp;Agent</div>
+      <div class="title">Echo Speaks</div>
+      <div class="tagline">Claude reads the archive, queries it directly, and narrates findings — every claim cited back to the rows.</div>
+      <ul>
+        <li>
+          <span class="marker">Loop</span>
+          <span class="txt">20-round ReAct <em>two-block prompt cache</em></span>
+        </li>
+        <li>
+          <span class="marker">Tools</span>
+          <span class="txt">run_sql · vector_search · execute_python · +4</span>
+        </li>
+        <li>
+          <span class="marker">Phases</span>
+          <span class="txt">Narrative-blind evidence → cited synthesis</span>
+        </li>
+        <li>
+          <span class="marker">Surface</span>
+          <span class="txt">SvelteKit UI <em>Speaks · Binges · Agency · Ask</em></span>
+        </li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="legend">
+      <div class="leg"><span class="swatch warm"></span><em>Warm</em> the human self</div>
+      <div class="leg"><span class="swatch cold"></span><em>Cold</em> the machine</div>
+    </div>
+    <div class="badges">
+      <div class="badge"><span class="dot"></span>100% local</div>
+      <div class="badge cold"><span class="dot"></span>No telemetry</div>
+      <div class="badge"><span class="dot"></span>MIT</div>
+      <div class="badge cold"><span class="dot"></span>BYO keys</div>
+    </div>
+  </div>
+
+</body>
+</html>
